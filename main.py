@@ -1,5 +1,7 @@
 # Import requisite python packages
+from abc import abstractproperty
 import enum
+from functools import cached_property
 import gdspy
 import numpy
 import math
@@ -1683,25 +1685,46 @@ def executeWriting():
             i+=1
 
 
+def old_main():
+    executeWriting()
+    if invert == True:
+        frame = gdspy.fast_boolean(outer_frame, cell_main, 'not')
+        cell_main.add(frame)
+    gdspy.write_gds("2023-11-18-M12.gds", unit=1.0e-9, precision=1.0e-11)
 
 
-def save_file(filename):
-    gdspy.write_gds(filename, unit=1.0e-9, precision=1.0e-11)
+# ---------------------------------------------------------------------------------------------------------------------------------------------------------
+
+import os
+import logging
+import sys
+
+from datetime import datetime
 
 
+root = logging.getLogger()
+root.setLevel(logging.DEBUG)
+handler = logging.StreamHandler(sys.stdout)
+handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+handler.setFormatter(formatter)
+root.addHandler(handler)
 
-# def main():
-#     executeWriting()
-#     if invert == True:
-#         frame = gdspy.fast_boolean(outer_frame, cell_main, 'not')
-#         cell_main.add(frame)
-#     save_file("2023-11-18-M12.gds")
+logger = logging.getLogger(__name__)
 
+
+class Unit(enum.Enum):
+    nm = 1
+    um = 10**3
+    mm = 10**6
 
 
 class GradingCoupler:
 
-    """ Where the photons are inputted. """
+    """
+    Where the photons are inputted.
+    
+    """
 
 
 class Hole:
@@ -1747,27 +1770,166 @@ class Phc:
         pass
 
 
-class WorkArea:
+class PhcGroup:
+
+    """ 
+    A group of Phcs.
+
+    Phcs are written in groups to accommodate for any manufacturing errors. Not all Phcs within a group are neccesarily
+    the same as test Phcs with no beam holes are created to test light transmittance.
+
+    """
+
+
+
+class Rectangle(gdspy.Rectangle):
+
+    def __init__(self, width, height, layer=0, center_to_origin=True):
+        self.width = width
+        self.height = height
+        self.center_to_origin = center_to_origin
+        super().__init__(self.top_left_coords, self.bot_right_coords, layer=layer)
+
+    @cached_property
+    def top_left_coords(self):
+        return (-self.width/2, self.height/2) if self.center_to_origin else (0, self.height)
+    
+    @cached_property
+    def bot_right_coords(self):
+        return (self.width/2, -self.height/2) if self.center_to_origin else (self.width, 0)
+
+
+class Component:
+
+    god_cell = gdspy.Cell("god_cell")
+
+    @abstractproperty
+    def geometries_to_add(self):
+        """ A list of gdspy objects that get added to the god_cell. """
+
+    def add_geometries_to_god_cell(self):
+        for geometry in self.geometries_to_add:
+            self.god_cell.add(geometry)
+
+
+class WorkArea(Component):
 
     """
     This defines the maximum area for the chip.
 
     """
 
-    def __init__(self, x_length, y_length) -> None:
+    def __init__(self, x_length, y_length, layer) -> None:
+
+        super().__init__()
+
         self.x_length = x_length
         self.y_length = y_length
+        self.layer = layer
+
+        self.manufacturing_boundary = self.get_manufacturing_boundary()
+        self.writing_frame = self.get_writing_frame()
+        self.frame = self.get_frame()
+
+    def get_manufacturing_boundary(self):
+        """ # The maximum chip area (previously: outer_frame). """
+        return Rectangle(self.x_length, self.y_length, layer=4)
+    
+    def get_writing_frame(self):
+        """ # The main area the devices are written (previously: inner_frame). """
+        return Rectangle(spacing * um * num_rows, spacing_y * um * num_cols * pairs, layer=4)
+
+    def get_frame(self):
+        """ # The main area the devices are written (previously: frame). """
+        return gdspy.boolean(self.manufacturing_boundary, self.writing_frame, "not", layer=4)
+    
+    @property
+    def geometries_to_add(self):
+        return [
+            self.frame
+        ]
+
+    # def get_ebeam_marks(self):  # Marks defined in the Heidelberg for EBPG alignment
+    #     # # EPBG Alignment Marks
+    #     ebpg_mark_factor = 0.75
+    #     ebpg_size = 20 * um
+    #     corners = [mark_pos * ebpg_mark_factor, -mark_pos * ebpg_mark_factor]
+
+    #     markHeidelberg = gdspy.Rectangle((0, 0), (ebpg_size, ebpg_size), layer=4)
+    #     EBPG_marks.add(markHeidelberg)
+
+    #     for i in corners:
+    #         square_pos = gdspy.CellReference(EBPG_marks, (i - ebpg_size / 2, i - ebpg_size / 2))
+    #         frame = gdspy.boolean(frame, square_pos, "not", layer=4)
+
+    #         square_pos = gdspy.CellReference(EBPG_marks, (-i - ebpg_size / 2, i - ebpg_size / 2))
+    #         frame = gdspy.boolean(frame, square_pos, "not", layer=4)
+
+    #         # Additional markers to differentiate rotation.
+    #         bot_left_pos = gdspy.CellReference(EBPG_marks,
+    #                                         (-corners[0] - ebpg_size / 2, -corners[0] - ebpg_size / 2 - 600 * um))
+    #         frame = gdspy.boolean(frame, bot_left_pos, "not", layer=4)
+
+    #         bot_left_pos = gdspy.CellReference(EBPG_marks,
+    #                                         (-corners[0] - ebpg_size / 2 - 600 * um, -corners[0] - ebpg_size / 2))
+    #         frame = gdspy.boolean(frame, bot_left_pos, "not", layer=4)
+
+    #     cell_main.add(frame)
 
 
-class Unit(enum.Enum):
-    nm = 1
-    um = 10**3
-    mm = 10**6
+class Creator:
+    
+    """
+    EBPG: Electron Beam Projection Lithography (Raith EBPG system)
+    Heidelberg Laser Writer: high-precision laser lithography system
+    """
+
+    SAVE_DIR = "C:\\Users\\ericw\\playground\\gds_files"
+    UNIT = 1.0e-9
+    PRESICION = 1.0e-11
+
+    def __init__(self, name) -> None:
+
+        self.name = name
+        
+        self.work_area = WorkArea(
+            x_length=6 * Unit.mm.value,
+            y_length=6 * Unit.mm.value,
+            layer=4
+        )
+
+    @cached_property
+    def filename(self):
+        """ Ex: "2023-11-18-M12.gds" """
+        return f"{datetime.now().strftime('%Y-%m-%d')}-{self.name}.gds"
+
+    @cached_property
+    def filepath(self):
+        return os.path.join(self.SAVE_DIR, self.filename)
+
+    @property
+    def all_components(self):
+        return [
+            self.work_area
+        ]
+
+    def preprocess_geometries(self):
+        for component in self.all_components:
+            logger.debug(f"Adding geometry from {type(component).__name__} to god_cell")
+            component.add_geometries_to_god_cell()
+
+    def save_file(self, unit=UNIT, precision=PRESICION):
+        self.preprocess_geometries()
+        gdspy.write_gds(self.filepath, unit=unit, precision=precision)
+        if not os.path.exists(self.filepath):
+            logger.error(f"{self.filepath} does not exist after saving!")
 
 
 def main():
-    WorkArea(x_length, y_length)
-6000 * um
+    creator = Creator(name="test")
+    creator.save_file()
+
 
 if __name__ == "__main__":
+    # old_main()
     main()

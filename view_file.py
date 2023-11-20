@@ -87,16 +87,16 @@ if __name__ == "__main__":
     # # Display the layout
     # view.show()
 
-    import pya
+    # import pya
 
-    # Open the GDS file
-    gds_file_path = "path/to/your/file.gds"
-    layout = pya.InputGDSFile(gds_file_path).read()
+    # # Open the GDS file
+    # gds_file_path = "path/to/your/file.gds"
+    # layout = pya.InputGDSFile(gds_file_path).read()
 
-    # Create a viewer and display the layout
-    viewer = pya.Viewer()
-    viewer.create_layout(1).add_cell(layout.cell(layout.top_cell()))
-    viewer.zoom_fit()
-    viewer.show()
+    # # Create a viewer and display the layout
+    # viewer = pya.Viewer()
+    # viewer.create_layout(1).add_cell(layout.cell(layout.top_cell()))
+    # viewer.zoom_fit()
+    # viewer.show()
 
-    # main()
+    main()
