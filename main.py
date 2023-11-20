@@ -1,4 +1,5 @@
 # Import requisite python packages
+import enum
 import gdspy
 import numpy
 import math
@@ -53,7 +54,7 @@ dev_list = np.arange(0, num_rows * num_cols, 1)
 # Unit for all parameters: nm
 # Parameters for exposure
 write_field_size = 100e3
-write_field_x_size = 50e3
+write_field_x_size = 50e3  # frame surrounding the phc
 write_field_y_size = 100e3
 shot_pitch = 0.1
 pattern_x_sep = 80e3
@@ -256,81 +257,6 @@ frame = gdspy.boolean(outer_frame, inner_frame, "not", layer=4)
 
 
 
-
-def executeWriting():
-
-    for k in range(num_rows_phc):
-
-        # Write multiple rows
-        for j in range(num_cols_phc):
-            identifier = str(j) + str(k)
-
-            if PhCSweeper == True:
-                xpos = (k * spacing_phc - spacing_phc * (num_rows_phc - 1) / 2) * um
-                ypos = ((linker_width / 1e3) * 2 + wy_list[0] / 1e3) / spacing_phc * (
-                            spacing_phc / 2 + j * spacing_phc - spacing_phc * num_cols_phc * pairs / 2) * um
-
-
-                name = num_cols_phc * k + j
-                phc = PhC_Writer(param_sweep[name], end_period=end_period, blank_guides=num_guides, text=text)
-
-                # phc_sweep_y_offset = -34.84
-                phc_pos = gdspy.CellReference(phc, (xpos, ypos + phc_y_offset))
-                phc_sweep.add(phc_pos)
-
-
-    i=0
-
-    for k in range(num_rows):
-
-        # Write multiple rows
-        for j in range(num_cols):
-            identifier = str(j) + str(k)
-
-            xpos = (k * spacing - spacing * (len(widths) - 1) / 2) * um
-            ypos = (spacing_y / 2 + j * spacing_y - spacing_y * len(gaps) * pairs / 2) * um
-            # QFC Device
-            if writeQFC == True:
-                device = defineDevice(widths[k], ring_r, coupling_l, gaps[j], grating_offset, g)
-                device_pos = gdspy.CellReference(device, (xpos, ypos + ringPos_offset_y))
-                cell_main.add(device_pos)
-
-            if PhCSweeper == True and writePhC == False and i==0:
-                name = num_cols * k + j
-
-                phc_pos = gdspy.CellReference(phc_sweep, (xpos, ypos - phc_y_offset))
-                cell_main.add(phc_pos)
-
-            if writePhC == True:
-                name = num_cols * k + j
-                phc = PhC_Writer(param_sweep[name], end_period=end_period, blank_guides=num_guides, text=text)
-
-                phc_pos = gdspy.CellReference(phc, (xpos, ypos - phc_y_offset))
-                cell_main.add(phc_pos)
-
-            if writeMems == True and i==0:
-                membrane = defineMembrane(identifier, spacing, spacing_y, length, height, layer=5)
-
-                phc_sweep_frame = gdspy.Rectangle((-length/2, -height/2), (length/2, height/2), layer=5)
-                phc_sweep_frame_cell.add(phc_sweep_frame)
-                phc_sweep_frame_cell_pos = gdspy.CellReference(phc_sweep_frame_cell, (xpos, ypos), magnification=1000)
-                membrane_pos = gdspy.CellReference(membrane, (xpos, ypos), magnification=1000)
-
-                if removeInnerMem == True:
-                    membrane_pos = gdspy.boolean(membrane_pos, phc_sweep_frame_cell_pos, "not", layer=5)
-                cell_main.add(membrane_pos)
-
-            # # Supports Mask
-
-            if supportsMaskBool == True:
-                if k == 0 and j == 0:
-                    supportsMask(name, xpos, ypos, spacing)
-
-            if EBPG_markers == True:
-                ebeam_marks(frame)
-            if litho_markers == True:
-                litho_marks()
-            i+=1
 
 def defineDevice(wg_w, ring_r, coupling_l, coupling_gap, grating_offset, g):
     # Create the grating couplers
@@ -545,7 +471,6 @@ def write_beam_single(cell, pltdata, layer=1):
 
 
 def write_beam_array(cell, first_beam, width_list=None):
-    global num_beam, beam_spacing
 
     if width_list is None:
         _dy_list = first_beam.dy * numpy.ones(num_beam, dtype=int)
@@ -564,7 +489,6 @@ def write_beam_array(cell, first_beam, width_list=None):
 
 
 def write_hole_single(cell, pltdata, layer=2):
-    global num_circ_points, shot_pitch
 
     _philist = numpy.linspace(0, 2 * numpy.pi, num_circ_points)
 
@@ -732,7 +656,6 @@ def write_hole_2D(cell, beamdata, holedata, beam_dy_list, num_cav_hole, num_mir_
                   end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, edge_overdose=False,
                   ring_overdose=False,
                   ring_underdose=True, edge_underdose=True):
-    global num_beam, beam_spacing, over_edge_size, over_ring_size, spacer
 
     _initial_ypos = holedata.ypos - beam_dy_list[0] / 2.0
     _tmp_beamdata = copy.copy(beamdata)
@@ -814,7 +737,6 @@ def write_hole_2D_mir_sweep(cell, beamdata, holedata, beam_dy_list, num_cav_hole
                             acav, amir, guides,
                             end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False,
                             edge_overdose=False, ring_overdose=False):
-    global num_beam, beam_spacing
 
     _initial_ypos = holedata.ypos - beam_dy_list[0] / 2.0
     _tmp_beamdata = copy.copy(beamdata)
@@ -831,7 +753,6 @@ def write_hole_2D_mir_sweep(cell, beamdata, holedata, beam_dy_list, num_cav_hole
 
 
 def write_alignment_mark(cell, alignment_xpos, alignment_ypos, layer=3):
-    global mark_thickness, mark_length
 
     cell.add(gdspy.Polygon([
         (alignment_xpos - mark_length / 2.0, alignment_ypos - mark_thickness / 2.0),
@@ -896,8 +817,6 @@ def linker_polygon(pltdata, layer=3):
 
 
 def write_linker_region(beamdata, xmin, xmax, ymin, ymax, round_corner=False, layer=6):
-    global corner_bend_rad, corner_bend_pts, linker_edgeoffset, linker_width, linker_connector_width
-    global linker_notch_size, linker_beam_size, linker_xnotches, linker_ynotches
 
     _tmp_beamdata = copy.copy(beamdata)
     _linkerdata_inner = PLTdata()
@@ -998,8 +917,6 @@ def write_linker_region(beamdata, xmin, xmax, ymin, ymax, round_corner=False, la
 
 
 def write_left_circ_grating(beamdata, layer=4):
-    global shot_pitch, num_circ_grating_points, grating_spacing, grating_linewidth, num_grating
-    global circ_grating_base, grating_angle, odd_support_angle, even_support_angle, support_angle_width
 
     _philist_L = numpy.linspace(numpy.pi / 2.0, numpy.pi * 3.0 / 2.0, num_circ_grating_points - 1)
     _philist_L = numpy.append(_philist_L, numpy.pi / 2.0)
@@ -1103,8 +1020,6 @@ def write_left_circ_grating(beamdata, layer=4):
 
 
 def write_right_circ_grating(beamdata, layer=5):
-    global shot_pitch, num_circ_grating_points, grating_spacing, grating_linewidth, num_grating
-    global circ_grating_base, grating_angle, odd_support_angle, even_support_angle, support_angle_width
 
     _philist_R = numpy.linspace(-1 * numpy.pi / 2.0, numpy.pi / 2.0, num_circ_grating_points - 1)
     _philist_R = numpy.append(_philist_R, -1 * numpy.pi / 2.0)
@@ -1208,7 +1123,6 @@ def write_right_circ_grating(beamdata, layer=5):
 
 
 def write_circ_grating(beamdata, beam_dy_list, circ_grating_support=None, layer=5):
-    global num_beam, beam_spacing
 
     _tmp_beamdata = copy.copy(beamdata)
     _tmp_beamdata.ypos = _tmp_beamdata.ypos - beam_dy_list[0] / 2.0
@@ -1292,8 +1206,6 @@ def write_outer_box(cell, beamdata, beam_dy_list, grating_spacer=False, round_co
                     write_linker=False, pinch_pt_L=False, pinch_pt_R=False, pinch_pt_L_offset=0, pinch_pt_R_offset=0,
                     pinch_pt_size=0, circ_grating=False, grating_support_size=None, pattern_number=None,
                     reverse_tone=False, layer=3):
-    global num_beam, beam_spacing, edge_offset, corner_bend_rad, corner_bend_pts, linker_edgeoffset, spacer
-    global linker_width, text_dist_to_top, under_edge_size
 
     _xmin = beamdata.xpos - beamdata.dx / 2.0 - int(write_linker) * (linker_width + linker_edgeoffset)
     _xmax = beamdata.xpos + beamdata.dx / 2.0 + int(write_linker) * (linker_width + linker_edgeoffset)
@@ -1408,8 +1320,6 @@ def write_outer_box(cell, beamdata, beam_dy_list, grating_spacer=False, round_co
 
 
 def write_support_region(innerframe, layer=3):
-    global corner_bend_rad, support_connector_width, support_notch_size, support_beam_size
-    global num_xsupport, num_ysupport, write_field_x_size, write_field_y_size
 
     _support_box_outer = copy.copy(innerframe)
     _ymin = _support_box_outer.ypos - _support_box_outer.dy / 2.0
@@ -1518,7 +1428,6 @@ def write_support_region(innerframe, layer=3):
 
 
 def write_outer_frame(cell, beamdata, beam_dy_list, outer_box, pattern_number=None, reverse_tone=False, layer=3):
-    global num_beam, beam_spacing, edge_offset, linker_edgeoffset, linker_width, text_dist_to_top
 
     _ymin = beamdata.ypos - beam_dy_list[0] / 2.0 - edge_offset
     _ymax = _ymin + (num_beam - 1) * beam_spacing + numpy.sum(beam_dy_list) + edge_offset * 2
@@ -1697,16 +1606,168 @@ def supportsMask(name, xpos, ypos, spacing):
 
 
 
-executeWriting()
+
+def executeWriting():
+
+    for k in range(num_rows_phc):
+
+        # Write multiple rows
+        for j in range(num_cols_phc):
+            identifier = str(j) + str(k)
+
+            if PhCSweeper == True:
+                xpos = (k * spacing_phc - spacing_phc * (num_rows_phc - 1) / 2) * um
+                ypos = ((linker_width / 1e3) * 2 + wy_list[0] / 1e3) / spacing_phc * (
+                            spacing_phc / 2 + j * spacing_phc - spacing_phc * num_cols_phc * pairs / 2) * um
 
 
-if invert == True:
-    frame = gdspy.fast_boolean(outer_frame, cell_main, 'not')
-    cell_main.add(frame)
+                name = num_cols_phc * k + j
+                phc = PhC_Writer(param_sweep[name], end_period=end_period, blank_guides=num_guides, text=text)
+
+                # phc_sweep_y_offset = -34.84
+                phc_pos = gdspy.CellReference(phc, (xpos, ypos + phc_y_offset))
+                phc_sweep.add(phc_pos)
+
+
+    i=0
+
+    for k in range(num_rows):
+
+        # Write multiple rows
+        for j in range(num_cols):
+            identifier = str(j) + str(k)
+
+            xpos = (k * spacing - spacing * (len(widths) - 1) / 2) * um
+            ypos = (spacing_y / 2 + j * spacing_y - spacing_y * len(gaps) * pairs / 2) * um
+            # QFC Device
+            if writeQFC == True:
+                device = defineDevice(widths[k], ring_r, coupling_l, gaps[j], grating_offset, g)
+                device_pos = gdspy.CellReference(device, (xpos, ypos + ringPos_offset_y))
+                cell_main.add(device_pos)
+
+            if PhCSweeper == True and writePhC == False and i==0:
+                name = num_cols * k + j
+
+                phc_pos = gdspy.CellReference(phc_sweep, (xpos, ypos - phc_y_offset))
+                cell_main.add(phc_pos)
+
+            if writePhC == True:
+                name = num_cols * k + j
+                phc = PhC_Writer(param_sweep[name], end_period=end_period, blank_guides=num_guides, text=text)
+
+                phc_pos = gdspy.CellReference(phc, (xpos, ypos - phc_y_offset))
+                cell_main.add(phc_pos)
+
+            if writeMems == True and i==0:
+                membrane = defineMembrane(identifier, spacing, spacing_y, length, height, layer=5)
+
+                phc_sweep_frame = gdspy.Rectangle((-length/2, -height/2), (length/2, height/2), layer=5)
+                phc_sweep_frame_cell.add(phc_sweep_frame)
+                phc_sweep_frame_cell_pos = gdspy.CellReference(phc_sweep_frame_cell, (xpos, ypos), magnification=1000)
+                membrane_pos = gdspy.CellReference(membrane, (xpos, ypos), magnification=1000)
+
+                if removeInnerMem == True:
+                    membrane_pos = gdspy.boolean(membrane_pos, phc_sweep_frame_cell_pos, "not", layer=5)
+                cell_main.add(membrane_pos)
+
+            # # Supports Mask
+
+            if supportsMaskBool == True:
+                if k == 0 and j == 0:
+                    supportsMask(name, xpos, ypos, spacing)
+
+            if EBPG_markers == True:
+                ebeam_marks(frame)
+            if litho_markers == True:
+                litho_marks()
+            i+=1
+
+
 
 
 def save_file(filename):
     gdspy.write_gds(filename, unit=1.0e-9, precision=1.0e-11)
 
 
-save_file("2023-11-18-M12.gds")
+
+# def main():
+#     executeWriting()
+#     if invert == True:
+#         frame = gdspy.fast_boolean(outer_frame, cell_main, 'not')
+#         cell_main.add(frame)
+#     save_file("2023-11-18-M12.gds")
+
+
+
+class GradingCoupler:
+
+    """ Where the photons are inputted. """
+
+
+class Hole:
+
+    """
+    This is the cavity that the photons bounce around in.
+
+    """
+
+
+class Beam:
+
+    """
+    The area that houses the holes.
+
+    Note:    
+        This is a 1 dimmensional beam. There can be more in the future. TODO
+    """
+
+    pass
+
+
+class LinearPattern:
+
+    """
+    This is for defining how many copies of a Phc you want for compensating for manufacturing errors.
+
+    """
+
+    def __init__(self, x_count=1, y_count=1) -> None:
+        self.x_count = x_count
+        self.y_count = y_count
+
+
+class Phc:
+
+    """
+    The photonic crystal cavity.
+
+    """
+
+    def __init__(self, beam, grading_coupler) -> None:
+        pass
+
+
+class WorkArea:
+
+    """
+    This defines the maximum area for the chip.
+
+    """
+
+    def __init__(self, x_length, y_length) -> None:
+        self.x_length = x_length
+        self.y_length = y_length
+
+
+class Unit(enum.Enum):
+    nm = 1
+    um = 10**3
+    mm = 10**6
+
+
+def main():
+    WorkArea(x_length, y_length)
+6000 * um
+
+if __name__ == "__main__":
+    main()
