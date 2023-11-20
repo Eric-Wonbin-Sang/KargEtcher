@@ -7,21 +7,25 @@ import copy
 # Define the fixed variables of the structure
 import numpy as np
 
+
 nm = 1
 um = 1000
 
 # General Pattern Layout
-writeMems = True
+writeMems = False
 writePhC = True
+PhCSweeper = not writePhC
 writeQFC = False
-writeAlignment = True
 EBPG_markers = True
 litho_markers = True
+supportsMaskBool = False
+removeInnerMem = True
+
 
 # Define the key parameters of the membrane and support structure
 chip_size = 6000 * um  # The size of our chip - assumed to be 6mm x 6mm - reduce slightly in case of variations
 
-invert = True
+invert = False
 
 # Create the cells of the cad file
 cell_main = gdspy.Cell("main_cell")
@@ -32,41 +36,21 @@ reflector_taper_cell = gdspy.Cell("reflector_taper")
 device_pos = gdspy.Cell('device_pos')
 support_mask = gdspy.Cell('support_mask')
 phc_frame = gdspy.Cell('phc_frame')
+phc_sweep = gdspy.Cell('phc_sweep')
 EBPG_marks = gdspy.Cell("ebpg_marks")
 heid_alignment_mark = gdspy.Cell('heid_alignment mark')
+phc_sweep_frame_cell = gdspy.Cell('phc_sweep_frame')
 
-devs = 3
+devs = 6
 
-num_rows = devs  # Number of times to write each row of membranes
-num_cols = devs
+num_rows = 6# Number of times to write each row of membranes
+num_cols = 6
 
 dev_list = np.arange(0, num_rows * num_cols, 1)
 
-# Membrane Parameters
 
-gap = 10  # 10um gap between the membrane and support structure
-support_width = 10  # The width of the support for the suspended layer
-support_pinch_width = 3  # The width of the pinch point for stamping
-support_pinch_length = 2  # The length of the pinch point region
-support_pitch = 0.4  # Ratio of support structure to exposed area
-
-# Membrane parameters
-perforations = False
-
-length = 220
-height = 220
-
-safety = 200  # Space between membranes
-spacing = length + safety + support_width * 2
-
-phc_y_offset = (35 - 0.275) * um  # An arbitrary parameter for centering the devices at the origin
-
-column_size = num_rows * spacing
-pairs = 1
-# PhC Device Parameters
 
 # Unit for all parameters: nm
-
 # Parameters for exposure
 write_field_size = 100e3
 write_field_x_size = 50e3
@@ -85,17 +69,25 @@ edge_offset = 5e3
 corner_bend_rad = 3e3
 corner_bend_pts = 41
 
+num_rows_phc = 12
+num_cols_phc = 12
+spacing_phc = 2*(edge_offset/1e3)+10
+
 acav = [155.5]
 amir = [172.1]
 
-wy_list = [450]
+wy_list = [470]
 wy_end_taper_list = []
-hx_list = [73]
-hy_list = [194, 198, 202]
-mirror_list = [5, 7, 8]
+
+hx_list = [63, 66, 69, 73, 76, 79]
+hy_list = [180, 184, 188, 192, 196, 200]
+
+mirror_list = [10]
 cavity_list = [16]
 taper_holes = [0]
 
+
+phc_dev_list = np.arange(0, num_rows_phc * num_cols_phc, 1)
 param_sweep = np.array(np.meshgrid(acav, amir, wy_list, mirror_list, cavity_list, hx_list, hy_list, taper_holes)).T.reshape(-1, 8).astype(int)
 param_sweep = list(zip(dev_list, param_sweep))
 
@@ -104,7 +96,7 @@ custom_cavity = True
 seg = np.array([1.57385141e-07, 1.58156287e-07, 1.59014195e-07, 1.59789244e-07,
                 1.61512865e-07, 1.63789232e-07, 1.65369591e-07, 1.67000125e-07]) * 1e9
 custom_cavity_list = np.append(np.flip(seg), seg)
-num_guides = 1  # Define the number of blank waveguides for control measurements (0,1,2)
+num_guides = 0  # Define the number of blank waveguides for control measurements (0,1,2)
 
 taper_neff = 1.8
 end_period = np.round(955 / (3.1 * 2), 1)
@@ -143,7 +135,7 @@ linker_xnotches = 0
 linker_ynotches = 0
 
 # Parameter for the support
-support_connector_width = 0.000001e3
+support_connector_width = 1e3 #0.000001e3
 support_notch_size = 400
 support_beam_size = 1e3
 num_xsupport = 2
@@ -172,10 +164,10 @@ support_angle_width = 2.3 * numpy.pi / 180  # 10 degree in radian
 
 # Parameters for the text
 text = True
-textheight = 6e3
-textwidth = textheight * 5.0 / 9.0
+textheight = 8e3
+textwidth = textheight * 20.0 / 9.0
 textsep = textheight * 8.0 / 9.0
-text_dist_to_top = 3e3
+text_dist_to_top = 6e3
 
 matrix_x_size = len(hy_list)
 matrix_y_size = len(mirror_list)
@@ -187,6 +179,35 @@ k = 0
 
 origin_x = 0
 origin_y = 0
+
+# Membrane Parameters
+
+gap = 10  # 10um gap between the membrane and support structure
+support_width = 10  # The width of the support for the suspended layer
+support_pinch_width = 3  # The width of the pinch point for stamping
+support_pinch_length = 2  # The length of the pinch point region
+support_pitch = 0.4  # Ratio of support structure to exposed area
+
+# Membrane parameters
+perforations = False
+
+# length = spacing_phc*12
+# height = ((linker_width / 1e3) * 2 + wy_list[0] / 1e3)*12
+
+length = 150
+height = 200
+
+
+safety = 60 # Space between membranes
+spacing = length + safety + support_width * 2
+spacing_y = height + safety + support_width * 2
+
+
+phc_y_offset = (35 - 0.275) * um  # An arbitrary parameter for centering the devices at the origin
+
+column_size = num_rows * spacing
+pairs = 1
+# PhC Device Parameters
 
 # QFC Device Parameters
 widths = np.linspace(0, 1, devs)
@@ -229,14 +250,157 @@ write_size = (length + safety + gap * 2) * devs
 mark_pos = write_size * um
 
 outer_frame = gdspy.Rectangle((-chip_size / 2, chip_size / 2), (chip_size / 2, -chip_size / 2), layer=4)
-inner_frame = gdspy.Rectangle((-spacing * um * num_rows / 2, spacing * um * num_cols * pairs / 2),
-                              (spacing * um * num_rows / 2, -spacing * um * num_cols * pairs / 2), layer=4)
+inner_frame = gdspy.Rectangle((-spacing * um * num_rows / 2, spacing_y * um * num_cols * pairs / 2),
+                              (spacing * um * num_rows / 2, -spacing_y * um * num_cols * pairs / 2), layer=4)
 frame = gdspy.boolean(outer_frame, inner_frame, "not", layer=4)
 
-if invert == True:
-    frame = gdspy.fast_boolean(outer_frame, cell_main, 'not')
-    cell_main.add(frame)
 
+
+
+def executeWriting():
+
+    for k in range(num_rows_phc):
+
+        # Write multiple rows
+        for j in range(num_cols_phc):
+            identifier = str(j) + str(k)
+
+            if PhCSweeper == True:
+                xpos = (k * spacing_phc - spacing_phc * (num_rows_phc - 1) / 2) * um
+                ypos = ((linker_width / 1e3) * 2 + wy_list[0] / 1e3) / spacing_phc * (
+                            spacing_phc / 2 + j * spacing_phc - spacing_phc * num_cols_phc * pairs / 2) * um
+
+
+                name = num_cols_phc * k + j
+                phc = PhC_Writer(param_sweep[name], end_period=end_period, blank_guides=num_guides, text=text)
+
+                # phc_sweep_y_offset = -34.84
+                phc_pos = gdspy.CellReference(phc, (xpos, ypos + phc_y_offset))
+                phc_sweep.add(phc_pos)
+
+
+    i=0
+
+    for k in range(num_rows):
+
+        # Write multiple rows
+        for j in range(num_cols):
+            identifier = str(j) + str(k)
+
+            xpos = (k * spacing - spacing * (len(widths) - 1) / 2) * um
+            ypos = (spacing_y / 2 + j * spacing_y - spacing_y * len(gaps) * pairs / 2) * um
+            # QFC Device
+            if writeQFC == True:
+                device = defineDevice(widths[k], ring_r, coupling_l, gaps[j], grating_offset, g)
+                device_pos = gdspy.CellReference(device, (xpos, ypos + ringPos_offset_y))
+                cell_main.add(device_pos)
+
+            if PhCSweeper == True and writePhC == False and i==0:
+                name = num_cols * k + j
+
+                phc_pos = gdspy.CellReference(phc_sweep, (xpos, ypos - phc_y_offset))
+                cell_main.add(phc_pos)
+
+            if writePhC == True:
+                name = num_cols * k + j
+                phc = PhC_Writer(param_sweep[name], end_period=end_period, blank_guides=num_guides, text=text)
+
+                phc_pos = gdspy.CellReference(phc, (xpos, ypos - phc_y_offset))
+                cell_main.add(phc_pos)
+
+            if writeMems == True and i==0:
+                membrane = defineMembrane(identifier, spacing, spacing_y, length, height, layer=5)
+
+                phc_sweep_frame = gdspy.Rectangle((-length/2, -height/2), (length/2, height/2), layer=5)
+                phc_sweep_frame_cell.add(phc_sweep_frame)
+                phc_sweep_frame_cell_pos = gdspy.CellReference(phc_sweep_frame_cell, (xpos, ypos), magnification=1000)
+                membrane_pos = gdspy.CellReference(membrane, (xpos, ypos), magnification=1000)
+
+                if removeInnerMem == True:
+                    membrane_pos = gdspy.boolean(membrane_pos, phc_sweep_frame_cell_pos, "not", layer=5)
+                cell_main.add(membrane_pos)
+
+            # # Supports Mask
+
+            if supportsMaskBool == True:
+                if k == 0 and j == 0:
+                    supportsMask(name, xpos, ypos, spacing)
+
+            if EBPG_markers == True:
+                ebeam_marks(frame)
+            if litho_markers == True:
+                litho_marks()
+            i+=1
+
+def defineDevice(wg_w, ring_r, coupling_l, coupling_gap, grating_offset, g):
+    # Create the grating couplers
+    for i in range(n_gratings):
+        grating_post = gdspy.Rectangle((grating_ew + i * grating_period, - grating_w / 2),
+                                       (grating_ew + i * grating_period + grating_fw, grating_w / 2))
+        grating_cell.add(grating_post)
+
+    # Create the reflector grating
+    for i in range(reflector_n_gratings):
+        reflector_post = gdspy.Rectangle((reflector_ew + i * reflector_period, - reflector_w / 2),
+                                         (reflector_ew + i * reflector_period + reflector_fw, reflector_w / 2))
+        reflector_cell.add(reflector_post)
+
+    # Create the grating coupler taper
+    grating_taper_points = [(0, -wg_w / 2), (0, wg_w / 2), (grating_taper_length, grating_w / 2),
+                            (grating_taper_length, -grating_w / 2)]
+    grating_taper_poly = gdspy.Polygon(grating_taper_points)
+    grating_taper_cell.add(grating_taper_poly)
+
+    # Create the reflector taper
+    reflector_taper_points = [(0, -wg_w / 2), (0, wg_w / 2), (reflector_taper_length, reflector_w / 2),
+                              (reflector_taper_length, -reflector_w / 2)]
+    reflector_taper_poly = gdspy.Polygon(reflector_taper_points)
+    reflector_taper_cell.add(reflector_taper_poly)
+
+    # Create the ring resonator
+    ring = gdspy.Path(wg_w)
+    ring.segment(coupling_l / 2, "+x")
+    ring.arc(ring_r, math.pi / 2, -math.pi / 2)
+    ring.segment(coupling_l / 2, "-x")
+
+    ring2 = gdspy.copy(ring)
+    ring2.mirror((0, 0), (0, 100))
+
+    # Create the coupling region
+    coupler = gdspy.Rectangle((-coupling_l / 2 - grating_offset, coupling_gap + wg_w / 2),
+                              (coupling_l / 2 + grating_offset, coupling_gap + wg_w / 2 + wg_w))
+    grating_taper = gdspy.CellReference(grating_taper_cell, (-coupling_l / 2 - grating_offset, wg_w + coupling_gap),
+                                        180)
+    coupler_grating = gdspy.CellReference(grating_cell, (
+        -coupling_l / 2 - grating_offset - grating_taper_length, wg_w + coupling_gap), 180)
+    reflector_taper = gdspy.CellReference(reflector_taper_cell, (coupling_l / 2 + grating_offset, wg_w + coupling_gap))
+    reflector_grating = gdspy.CellReference(reflector_cell, (
+        coupling_l / 2 + grating_offset + reflector_taper_length, wg_w + coupling_gap))
+
+    # Add a grating-only region
+    # grating_test_wg = gdspy.Rectangle((-coupling_l/2 - grating_offset,-2*ring_r-5), (coupling_l/2 + grating_offset,-2*ring_r-5-wg_w))
+    # grating_test_in = gdspy.CellReference(grating_cell,(-coupling_l/2 - grating_offset, -2*ring_r-5-wg_w/2),180)
+    # grating_test_out = gdspy.CellReference(grating_cell,(coupling_l/2 + grating_offset, -2*ring_r-5-wg_w/2),0)
+
+    # Add identifying text
+
+    device = gdspy.Cell(str(g) + str(wg_w) + str(coupling_gap) + 'device')
+
+    text = gdspy.Text(str(int(wg_w * 1000)), 4, (-2.5, -30))
+    device.add(text)
+
+    text = gdspy.Text(str(int(coupling_gap * 1000)), 4, (-2.5, -20))
+    device.add(text)
+
+    device.add(ring)
+    device.add(ring2)
+    device.add(coupler)
+    device.add(grating_taper)
+    device.add(coupler_grating)
+    device.add(reflector_taper)
+    device.add(reflector_grating)
+
+    return device
 
 
 cell_membrane_row = gdspy.Cell('membrane_width_sweep')  # Single instance of a sweep over the membrane widths
@@ -254,10 +418,10 @@ column_size = num_rows * spacing  # Length of a column
 # Define the cell reference for the support structure
 support_vertices = [(-gap / 2, support_width / 2), (-support_pinch_length / 2, support_pinch_width / 2),
                     (0, support_pinch_width / 2), (0, 0), (-gap / 2, 0)]
-support_1 = gdspy.Polygon(support_vertices, layer=4)
-support_2 = gdspy.Polygon(support_vertices, layer=4)
-support_3 = gdspy.Polygon(support_vertices, layer=4)
-support_4 = gdspy.Polygon(support_vertices, layer=4)
+support_1 = gdspy.Polygon(support_vertices, layer=5)
+support_2 = gdspy.Polygon(support_vertices, layer=5)
+support_3 = gdspy.Polygon(support_vertices, layer=5)
+support_4 = gdspy.Polygon(support_vertices, layer=5)
 support_2.mirror((0, -1), (0, 1))
 support_3.mirror((-1, 0), (1, 0))
 support_4.mirror((0, -1), (0, 1))
@@ -267,6 +431,103 @@ cell_support.add(support_2)
 cell_support.add(support_3)
 cell_support.add(support_4)
 
+
+# Define the square membrane hole cut-out
+# membrane_hole = gdspy.Rectangle((-center_hole_size/2, center_hole_size/2), (center_hole_size/2, -center_hole_size/2))
+# cell_membrane_hole.add(membrane_hole)
+
+
+def defineMembrane(identifier, spacing, spacing_y, length, height, layer = 5):
+    # Create a membrane cell for each desired membrane size
+
+    cell_membrane_nohole = gdspy.Cell('membrane' + identifier)
+
+    # Define the frame for the membrane
+    membrane_outer_frame = gdspy.Rectangle((-spacing / 2, spacing_y / 2),
+                                           (spacing / 2, -spacing_y / 2), layer=layer)
+    membrane_inner_frame = gdspy.Rectangle((-length / 2 - gap, height / 2 + gap),
+                                           (length / 2 + gap, -height / 2 - gap), layer=layer)
+    membrane_frame = gdspy.boolean(membrane_outer_frame, membrane_inner_frame, "not", layer=layer)
+    # Define the membrane itself
+    membrane = gdspy.Rectangle((-length / 2, height / 2), (length / 2, -height / 2), layer=layer)
+
+    # Add to the membrane cell
+    cell_membrane_nohole.add(membrane_frame)
+
+    # Perforations
+    if perforations == True:
+        factor = 0.5
+        perfPos = length / 2 * factor
+        perfSize = 3
+
+        perfPoints = [(1, -1), (1, 1), (-1, 1), (-1, -1)]
+        for i in perfPoints:
+            x = i[0] * perfPos
+            y = i[1] * perfPos
+            perf = gdspy.Rectangle((x, y), (x + perfSize, y + perfSize), layer=layer)
+            membrane = gdspy.boolean(membrane, perf, "not", layer=layer)
+
+        perf = gdspy.Rectangle((-perfSize / 2, -perfSize / 2), (perfSize / 2, perfSize / 2), layer=layer)
+
+        perf_cut = gdspy.boolean(membrane, perf, "not", layer=layer)
+        cell_membrane_nohole.add(perf_cut)
+
+    else:
+        cell_membrane_nohole.add(membrane)
+
+    # Add the support structures
+    support_period = support_width / support_pitch
+    air_width = support_period * (1 - support_pitch)
+
+    num_supports_x = math.floor(length / support_period + support_pitch)
+    num_supports_y = math.floor(height / support_period + support_pitch)
+
+    if (num_supports_y % 2) == 0:
+
+        # Number of supports is even
+        support_length_y = num_supports_y * support_period - support_period / 2
+        support_offset_y = (length - support_length_y) / 2 + support_width / 2
+
+        for i in range(0, num_supports_y):
+            ref1 = gdspy.CellReference(cell_support, (
+                -length / 2 - gap / 2, -length / 2 + support_offset_y + i * support_period))
+            ref2 = gdspy.CellReference(cell_support, (
+                length / 2 + gap / 2, -length / 2 + support_offset_y + i * support_period))
+            cell_membrane_nohole.add([ref1, ref2])
+    else:
+        # Number of supports is odd
+        for i in range(-math.floor(num_supports_y / 2), math.floor(num_supports_y / 2) + 1):
+            ref1 = gdspy.CellReference(cell_support, (-length / 2 - gap / 2, i * support_period))
+            ref2 = gdspy.CellReference(cell_support, (length / 2 + gap / 2, i * support_period))
+            cell_membrane_nohole.add([ref1, ref2])
+
+    # Membrane Sides For Rectangles
+    if (num_supports_x % 2) == 0:
+
+        # For rectangles
+        support_length_x = num_supports_x * support_period - support_period / 2
+        support_offset_x = (height - support_length_x) / 2 + support_width / 2
+
+        for i in range(0, num_supports_x):
+            # Rectangle
+            ref3 = gdspy.CellReference(cell_support, (
+                -height / 2 + support_offset_x + i * support_period, height / 2 + gap / 2), rotation=90)
+            ref4 = gdspy.CellReference(cell_support, (
+                -height / 2 + support_offset_x + i * support_period, -height / 2 - gap / 2),
+                                       rotation=90)
+            cell_membrane_nohole.add([ref3, ref4])
+
+    else:
+        # Number of supports is odd
+        for i in range(-math.floor(num_supports_x / 2), math.floor(num_supports_x / 2) + 1):
+            ref3 = gdspy.CellReference(cell_support, (i * support_period, height / 2 + gap / 2), rotation=90)
+            ref4 = gdspy.CellReference(cell_support, (i * support_period, -height / 2 - gap / 2), rotation=90)
+            cell_membrane_nohole.add([ref3, ref4])
+
+    cell_membrane_ref_nohole = gdspy.CellReference(cell_membrane_nohole, (0, 0))
+    cell_membrane_row_nohole.add(cell_membrane_ref_nohole)
+
+    return cell_membrane_row_nohole
 
 
 ########################################
@@ -284,6 +545,7 @@ def write_beam_single(cell, pltdata, layer=1):
 
 
 def write_beam_array(cell, first_beam, width_list=None):
+    global num_beam, beam_spacing
 
     if width_list is None:
         _dy_list = first_beam.dy * numpy.ones(num_beam, dtype=int)
@@ -302,6 +564,7 @@ def write_beam_array(cell, first_beam, width_list=None):
 
 
 def write_hole_single(cell, pltdata, layer=2):
+    global num_circ_points, shot_pitch
 
     _philist = numpy.linspace(0, 2 * numpy.pi, num_circ_points)
 
@@ -469,6 +732,7 @@ def write_hole_2D(cell, beamdata, holedata, beam_dy_list, num_cav_hole, num_mir_
                   end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, edge_overdose=False,
                   ring_overdose=False,
                   ring_underdose=True, edge_underdose=True):
+    global num_beam, beam_spacing, over_edge_size, over_ring_size, spacer
 
     _initial_ypos = holedata.ypos - beam_dy_list[0] / 2.0
     _tmp_beamdata = copy.copy(beamdata)
@@ -550,6 +814,7 @@ def write_hole_2D_mir_sweep(cell, beamdata, holedata, beam_dy_list, num_cav_hole
                             acav, amir, guides,
                             end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False,
                             edge_overdose=False, ring_overdose=False):
+    global num_beam, beam_spacing
 
     _initial_ypos = holedata.ypos - beam_dy_list[0] / 2.0
     _tmp_beamdata = copy.copy(beamdata)
@@ -566,6 +831,7 @@ def write_hole_2D_mir_sweep(cell, beamdata, holedata, beam_dy_list, num_cav_hole
 
 
 def write_alignment_mark(cell, alignment_xpos, alignment_ypos, layer=3):
+    global mark_thickness, mark_length
 
     cell.add(gdspy.Polygon([
         (alignment_xpos - mark_length / 2.0, alignment_ypos - mark_thickness / 2.0),
@@ -630,6 +896,8 @@ def linker_polygon(pltdata, layer=3):
 
 
 def write_linker_region(beamdata, xmin, xmax, ymin, ymax, round_corner=False, layer=6):
+    global corner_bend_rad, corner_bend_pts, linker_edgeoffset, linker_width, linker_connector_width
+    global linker_notch_size, linker_beam_size, linker_xnotches, linker_ynotches
 
     _tmp_beamdata = copy.copy(beamdata)
     _linkerdata_inner = PLTdata()
@@ -730,6 +998,8 @@ def write_linker_region(beamdata, xmin, xmax, ymin, ymax, round_corner=False, la
 
 
 def write_left_circ_grating(beamdata, layer=4):
+    global shot_pitch, num_circ_grating_points, grating_spacing, grating_linewidth, num_grating
+    global circ_grating_base, grating_angle, odd_support_angle, even_support_angle, support_angle_width
 
     _philist_L = numpy.linspace(numpy.pi / 2.0, numpy.pi * 3.0 / 2.0, num_circ_grating_points - 1)
     _philist_L = numpy.append(_philist_L, numpy.pi / 2.0)
@@ -833,6 +1103,8 @@ def write_left_circ_grating(beamdata, layer=4):
 
 
 def write_right_circ_grating(beamdata, layer=5):
+    global shot_pitch, num_circ_grating_points, grating_spacing, grating_linewidth, num_grating
+    global circ_grating_base, grating_angle, odd_support_angle, even_support_angle, support_angle_width
 
     _philist_R = numpy.linspace(-1 * numpy.pi / 2.0, numpy.pi / 2.0, num_circ_grating_points - 1)
     _philist_R = numpy.append(_philist_R, -1 * numpy.pi / 2.0)
@@ -936,6 +1208,7 @@ def write_right_circ_grating(beamdata, layer=5):
 
 
 def write_circ_grating(beamdata, beam_dy_list, circ_grating_support=None, layer=5):
+    global num_beam, beam_spacing
 
     _tmp_beamdata = copy.copy(beamdata)
     _tmp_beamdata.ypos = _tmp_beamdata.ypos - beam_dy_list[0] / 2.0
@@ -961,20 +1234,57 @@ def write_circ_grating(beamdata, beam_dy_list, circ_grating_support=None, layer=
     return _circ_grating_combined
 
 
-def write_pattern_number(cell, xloc, yloc, pattern_number, layer=3):
+from matplotlib.font_manager import FontProperties
+from matplotlib.textpath import TextPath
 
-    text_to_write = str(pattern_number)
-    if pattern_number == 0:
-        num_digit = 1
-    else:
-        num_digit = numpy.ceil(math.log10(pattern_number)) + 1
 
-    _pattern_number_to_write = gdspy.Text(
-        text_to_write, textheight,
-        (xloc - textwidth / 2.0 - textsep * (num_digit - 1) / 4.0, yloc - textheight / 2.0),
-        layer=layer)
-
-    return _pattern_number_to_write
+def write_pattern_number(pattern_number, size, position, font_prop=None, tolerance=0.1):
+    text = "+" + str(pattern_number)
+    path = TextPath(position, text, size=float(size), prop=font_prop)
+    polys = []
+    xmax = position[0]
+    for points, code in path.iter_segments():
+        if code == path.MOVETO:
+            c = gdspy.Curve(*points, tolerance=tolerance)
+        elif code == path.LINETO:
+            c.L(*points)
+        elif code == path.CURVE3:
+            c.Q(*points)
+        elif code == path.CURVE4:
+            c.C(*points)
+        elif code == path.CLOSEPOLY:
+            poly = c.get_points()
+            if poly.size > 0:
+                if poly[:, 0].min() < xmax:
+                    i = len(polys) - 1
+                    while i >= 0:
+                        if gdspy.inside(
+                            poly[:1], [polys[i]], precision=0.1 * tolerance
+                        )[0]:
+                            p = polys.pop(i)
+                            poly = gdspy.boolean(
+                                [p],
+                                [poly],
+                                "xor",
+                                precision=0.1 * tolerance,
+                                max_points=0,
+                            ).polygons[0]
+                            break
+                        elif gdspy.inside(
+                            polys[i][:1], [poly], precision=0.1 * tolerance
+                        )[0]:
+                            p = polys.pop(i)
+                            poly = gdspy.boolean(
+                                [p],
+                                [poly],
+                                "xor",
+                                precision=0.1 * tolerance,
+                                max_points=0,
+                            ).polygons[0]
+                        i -= 1
+                xmax = max(xmax, poly[:, 0].max())
+                polys.append(poly)
+    return polys
 
 
 def write_outer_box(cell, beamdata, beam_dy_list, grating_spacer=False, round_corner=False, direct_write_area=False,
@@ -982,6 +1292,8 @@ def write_outer_box(cell, beamdata, beam_dy_list, grating_spacer=False, round_co
                     write_linker=False, pinch_pt_L=False, pinch_pt_R=False, pinch_pt_L_offset=0, pinch_pt_R_offset=0,
                     pinch_pt_size=0, circ_grating=False, grating_support_size=None, pattern_number=None,
                     reverse_tone=False, layer=3):
+    global num_beam, beam_spacing, edge_offset, corner_bend_rad, corner_bend_pts, linker_edgeoffset, spacer
+    global linker_width, text_dist_to_top, under_edge_size
 
     _xmin = beamdata.xpos - beamdata.dx / 2.0 - int(write_linker) * (linker_width + linker_edgeoffset)
     _xmax = beamdata.xpos + beamdata.dx / 2.0 + int(write_linker) * (linker_width + linker_edgeoffset)
@@ -1096,6 +1408,8 @@ def write_outer_box(cell, beamdata, beam_dy_list, grating_spacer=False, round_co
 
 
 def write_support_region(innerframe, layer=3):
+    global corner_bend_rad, support_connector_width, support_notch_size, support_beam_size
+    global num_xsupport, num_ysupport, write_field_x_size, write_field_y_size
 
     _support_box_outer = copy.copy(innerframe)
     _ymin = _support_box_outer.ypos - _support_box_outer.dy / 2.0
@@ -1204,6 +1518,7 @@ def write_support_region(innerframe, layer=3):
 
 
 def write_outer_frame(cell, beamdata, beam_dy_list, outer_box, pattern_number=None, reverse_tone=False, layer=3):
+    global num_beam, beam_spacing, edge_offset, linker_edgeoffset, linker_width, text_dist_to_top
 
     _ymin = beamdata.ypos - beam_dy_list[0] / 2.0 - edge_offset
     _ymax = _ymin + (num_beam - 1) * beam_spacing + numpy.sum(beam_dy_list) + edge_offset * 2
@@ -1218,9 +1533,11 @@ def write_outer_frame(cell, beamdata, beam_dy_list, outer_box, pattern_number=No
     _frame_write_area = write_support_region(_support_inner, layer)
 
     if pattern_number is not None:
-        _pattern_number_to_write = write_pattern_number(cell, _support_inner.xpos,
-                                                        _support_inner.ypos + _support_inner.dy / 2.0 + 2e3,
-                                                        pattern_number, layer)
+        _pattern_number_to_write = write_pattern_number(pattern_number, textheight, (_support_inner.xpos-8e3,
+                                                        _support_inner.ypos + _support_inner.dy / 2.0 + 2.5e3))
+
+        # write_pattern_number(pattern_number, size=textheight, position=(xloc, yloc), font_prop=None, tolerance=0.1):
+
 
         _frame_write_area = gdspy.fast_boolean(_frame_write_area, _pattern_number_to_write, 'not', max_points=0,
                                                layer=layer)
@@ -1261,7 +1578,6 @@ def PhC_Writer(param_sweep, end_period=end_period, blank_guides=num_guides, text
     num_cav = param_sweep[1][4]
     num_tap = param_sweep[1][7]
     num_mirr = param_sweep[1][3] * 2
-
     beams = gdspy.Cell(str(param_sweep[0]))
 
     rowicolj = PLTdata()
@@ -1355,13 +1671,19 @@ def ebeam_marks(frame):  # Marks defined in the Heidelberg for EBPG alignment
     cell_main.add(frame)
 
 
-def supportsMask(name, xpos, ypos):
+def supportsMask(name, xpos, ypos, spacing):
     x_frame = write_field_x_size / 2 * 0.9
     y_frame = write_field_y_size / 2 * 0.9
 
+    x_frame = spacing*6 * um /2
+    y_frame = ((linker_width/1e3)*2+wy_list[0]/1e3) * um * 12/2
+
+
     phc_frame = gdspy.Rectangle((-x_frame, -y_frame), (x_frame, y_frame), layer=4)
 
+
     support_mask_inner = 0.82
+    spacing = 440
     support_mask_out = gdspy.Rectangle((-spacing * support_mask_inner * um / 2, spacing * support_mask_inner * um / 2),
                                        (spacing * support_mask_inner * um / 2, -spacing * support_mask_inner * um / 2))
 
@@ -1370,216 +1692,21 @@ def supportsMask(name, xpos, ypos):
     support_mask_frame = gdspy.boolean(support_mask_out, phc_frame, "not", layer=6)
     holder.add(support_mask_frame)
 
-    support_mask_pos = gdspy.CellReference(holder, (xpos, ypos))
+    support_mask_pos = gdspy.CellReference(holder, (x_frame/2, 3300))
     cell_main.add(support_mask_pos)
 
-
-# Define the square membrane hole cut-out
-# membrane_hole = gdspy.Rectangle((-center_hole_size/2, center_hole_size/2), (center_hole_size/2, -center_hole_size/2))
-# cell_membrane_hole.add(membrane_hole)
-
-
-def defineMembrane(identifier, spacing, length, height):
-    # Create a membrane cell for each desired membrane size
-
-    cell_membrane_nohole = gdspy.Cell('membrane' + identifier)
-
-    # Define the frame for the membrane
-    membrane_outer_frame = gdspy.Rectangle((-spacing / 2, spacing / 2),
-                                           (spacing / 2, -spacing / 2), layer=4)
-    membrane_inner_frame = gdspy.Rectangle((-length / 2 - gap, height / 2 + gap),
-                                           (length / 2 + gap, -height / 2 - gap), layer=4)
-    membrane_frame = gdspy.boolean(membrane_outer_frame, membrane_inner_frame, "not", layer=4)
-    # Define the membrane itself
-    membrane = gdspy.Rectangle((-length / 2, height / 2), (length / 2, -height / 2), layer=4)
-
-    # Add to the membrane cell
-    cell_membrane_nohole.add(membrane_frame)
-
-    # Perforations
-    if perforations == True:
-        factor = 0.5
-        perfPos = length / 2 * factor
-        perfSize = 3
-
-        perfPoints = [(1, -1), (1, 1), (-1, 1), (-1, -1)]
-        for i in perfPoints:
-            x = i[0] * perfPos
-            y = i[1] * perfPos
-            perf = gdspy.Rectangle((x, y), (x + perfSize, y + perfSize), layer=4)
-            membrane = gdspy.boolean(membrane, perf, "not", layer=4)
-
-        perf = gdspy.Rectangle((-perfSize / 2, -perfSize / 2), (perfSize / 2, perfSize / 2), layer=4)
-
-        perf_cut = gdspy.boolean(membrane, perf, "not", layer=4)
-        cell_membrane_nohole.add(perf_cut)
-
-    else:
-        cell_membrane_nohole.add(membrane)
-
-    # Add the support structures
-    support_period = support_width / support_pitch
-    air_width = support_period * (1 - support_pitch)
-
-    num_supports_x = math.floor(length / support_period + support_pitch)
-    num_supports_y = math.floor(height / support_period + support_pitch)
-
-    if (num_supports_y % 2) == 0:
-
-        # Number of supports is even
-        support_length_y = num_supports_y * support_period - support_period / 2
-        support_offset_y = (length - support_length_y) / 2 + support_width / 2
-
-        for i in range(0, num_supports_y):
-            ref1 = gdspy.CellReference(cell_support, (
-                -length / 2 - gap / 2, -length / 2 + support_offset_y + i * support_period))
-            ref2 = gdspy.CellReference(cell_support, (
-                length / 2 + gap / 2, -length / 2 + support_offset_y + i * support_period))
-            cell_membrane_nohole.add([ref1, ref2])
-    else:
-        # Number of supports is odd
-        for i in range(-math.floor(num_supports_y / 2), math.floor(num_supports_y / 2) + 1):
-            ref1 = gdspy.CellReference(cell_support, (-length / 2 - gap / 2, i * support_period))
-            ref2 = gdspy.CellReference(cell_support, (length / 2 + gap / 2, i * support_period))
-            cell_membrane_nohole.add([ref1, ref2])
-
-    # Membrane Sides For Rectangles
-    if (num_supports_x % 2) == 0:
-
-        # For rectangles
-        support_length_x = num_supports_x * support_period - support_period / 2
-        support_offset_x = (height - support_length_x) / 2 + support_width / 2
-
-        for i in range(0, num_supports_x):
-            # Rectangle
-            ref3 = gdspy.CellReference(cell_support, (
-                -height / 2 + support_offset_x + i * support_period, height / 2 + gap / 2), rotation=90)
-            ref4 = gdspy.CellReference(cell_support, (
-                -height / 2 + support_offset_x + i * support_period, -height / 2 - gap / 2),
-                                       rotation=90)
-            cell_membrane_nohole.add([ref3, ref4])
-
-    else:
-        # Number of supports is odd
-        for i in range(-math.floor(num_supports_x / 2), math.floor(num_supports_x / 2) + 1):
-            ref3 = gdspy.CellReference(cell_support, (i * support_period, height / 2 + gap / 2), rotation=90)
-            ref4 = gdspy.CellReference(cell_support, (i * support_period, -height / 2 - gap / 2), rotation=90)
-            cell_membrane_nohole.add([ref3, ref4])
-
-    cell_membrane_ref_nohole = gdspy.CellReference(cell_membrane_nohole, (0, 0))
-    cell_membrane_row_nohole.add(cell_membrane_ref_nohole)
-
-    return cell_membrane_row_nohole
-
-
-def defineDevice(wg_w, ring_r, coupling_l, coupling_gap, grating_offset, g):
-    # Create the grating couplers
-    for i in range(n_gratings):
-        grating_post = gdspy.Rectangle((grating_ew + i * grating_period, - grating_w / 2),
-                                       (grating_ew + i * grating_period + grating_fw, grating_w / 2))
-        grating_cell.add(grating_post)
-
-    # Create the reflector grating
-    for i in range(reflector_n_gratings):
-        reflector_post = gdspy.Rectangle((reflector_ew + i * reflector_period, - reflector_w / 2),
-                                         (reflector_ew + i * reflector_period + reflector_fw, reflector_w / 2))
-        reflector_cell.add(reflector_post)
-
-    # Create the grating coupler taper
-    grating_taper_points = [(0, -wg_w / 2), (0, wg_w / 2), (grating_taper_length, grating_w / 2),
-                            (grating_taper_length, -grating_w / 2)]
-    grating_taper_poly = gdspy.Polygon(grating_taper_points)
-    grating_taper_cell.add(grating_taper_poly)
-
-    # Create the reflector taper
-    reflector_taper_points = [(0, -wg_w / 2), (0, wg_w / 2), (reflector_taper_length, reflector_w / 2),
-                              (reflector_taper_length, -reflector_w / 2)]
-    reflector_taper_poly = gdspy.Polygon(reflector_taper_points)
-    reflector_taper_cell.add(reflector_taper_poly)
-
-    # Create the ring resonator
-    ring = gdspy.Path(wg_w)
-    ring.segment(coupling_l / 2, "+x")
-    ring.arc(ring_r, math.pi / 2, -math.pi / 2)
-    ring.segment(coupling_l / 2, "-x")
-
-    ring2 = gdspy.copy(ring)
-    ring2.mirror((0, 0), (0, 100))
-
-    # Create the coupling region
-    coupler = gdspy.Rectangle((-coupling_l / 2 - grating_offset, coupling_gap + wg_w / 2),
-                              (coupling_l / 2 + grating_offset, coupling_gap + wg_w / 2 + wg_w))
-    grating_taper = gdspy.CellReference(grating_taper_cell, (-coupling_l / 2 - grating_offset, wg_w + coupling_gap),
-                                        180)
-    coupler_grating = gdspy.CellReference(grating_cell, (
-        -coupling_l / 2 - grating_offset - grating_taper_length, wg_w + coupling_gap), 180)
-    reflector_taper = gdspy.CellReference(reflector_taper_cell, (coupling_l / 2 + grating_offset, wg_w + coupling_gap))
-    reflector_grating = gdspy.CellReference(reflector_cell, (
-        coupling_l / 2 + grating_offset + reflector_taper_length, wg_w + coupling_gap))
-
-    # Add a grating-only region
-    # grating_test_wg = gdspy.Rectangle((-coupling_l/2 - grating_offset,-2*ring_r-5), (coupling_l/2 + grating_offset,-2*ring_r-5-wg_w))
-    # grating_test_in = gdspy.CellReference(grating_cell,(-coupling_l/2 - grating_offset, -2*ring_r-5-wg_w/2),180)
-    # grating_test_out = gdspy.CellReference(grating_cell,(coupling_l/2 + grating_offset, -2*ring_r-5-wg_w/2),0)
-
-    # Add identifying text
-
-    device = gdspy.Cell(str(g) + str(wg_w) + str(coupling_gap) + 'device')
-
-    text = gdspy.Text(str(int(wg_w * 1000)), 4, (-2.5, -30))
-    device.add(text)
-
-    text = gdspy.Text(str(int(coupling_gap * 1000)), 4, (-2.5, -20))
-    device.add(text)
-
-    device.add(ring)
-    device.add(ring2)
-    device.add(coupler)
-    device.add(grating_taper)
-    device.add(coupler_grating)
-    device.add(reflector_taper)
-    device.add(reflector_grating)
-
-    return device
-
-
-def executeWriting():
-    for k in range(num_rows):
-        # Write multiple rows
-        for j in range(num_cols):
-            identifier = str(j) + str(k)
-
-            xpos = (k * spacing - spacing * (len(widths) - 1) / 2) * um
-            ypos = (spacing / 2 + j * spacing - spacing * len(gaps) * pairs / 2) * um
-
-            # QFC Device
-            if writeQFC:
-                device = defineDevice(widths[k], ring_r, coupling_l, gaps[j], grating_offset, g)
-                device_pos = gdspy.CellReference(device, (xpos, ypos + ringPos_offset_y))
-                cell_main.add(device_pos)
-
-            if writePhC:
-                name = num_rows * k + j
-                phc = PhC_Writer(param_sweep[name], end_period=end_period, blank_guides=num_guides, text=text)
-                phc_pos = gdspy.CellReference(phc, (xpos, ypos - phc_y_offset))
-                cell_main.add(phc_pos)
-
-            if writeMems:
-                membrane = defineMembrane(identifier, spacing, length, height)
-                membrane_pos = gdspy.CellReference(membrane, (xpos, ypos), magnification=1000)
-                cell_main.add(membrane_pos)
-
-            # # Supports Mask
-
-            if writeMems and writePhC is True:
-                supportsMask(name, xpos, ypos)
-
-            if EBPG_markers == True:
-                ebeam_marks(frame)
-            if litho_markers == True:
-                litho_marks()
 
 
 executeWriting()
 
-gdspy.write_gds('2023-11-10-O1.gds', unit=1.0e-9, precision=1.0e-11)  # Write the GDS file
+
+if invert == True:
+    frame = gdspy.fast_boolean(outer_frame, cell_main, 'not')
+    cell_main.add(frame)
+
+
+def save_file(filename):
+    gdspy.write_gds(filename, unit=1.0e-9, precision=1.0e-11)
+
+
+save_file("2023-11-18-M12.gds")

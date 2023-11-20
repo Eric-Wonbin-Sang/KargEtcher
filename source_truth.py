@@ -10,18 +10,23 @@ import numpy as np
 nm = 1
 um = 1000
 
+filename = '2023-11-18-M12.gds'
+
 # General Pattern Layout
-writeMems = True
+writeMems = False
 writePhC = True
+PhCSweeper = not writePhC
 writeQFC = False
-writeAlignment = True
 EBPG_markers = True
 litho_markers = True
+supportsMaskBool = False
+removeInnerMem = True
+
 
 # Define the key parameters of the membrane and support structure
 chip_size = 6000 * um  # The size of our chip - assumed to be 6mm x 6mm - reduce slightly in case of variations
 
-invert = True
+invert = False
 
 # Create the cells of the cad file
 cell_main = gdspy.Cell("main_cell")
@@ -32,41 +37,21 @@ reflector_taper_cell = gdspy.Cell("reflector_taper")
 device_pos = gdspy.Cell('device_pos')
 support_mask = gdspy.Cell('support_mask')
 phc_frame = gdspy.Cell('phc_frame')
+phc_sweep = gdspy.Cell('phc_sweep')
 EBPG_marks = gdspy.Cell("ebpg_marks")
 heid_alignment_mark = gdspy.Cell('heid_alignment mark')
+phc_sweep_frame_cell = gdspy.Cell('phc_sweep_frame')
 
-devs = 3
+devs = 6
 
-num_rows = devs  # Number of times to write each row of membranes
-num_cols = devs
+num_rows = 6# Number of times to write each row of membranes
+num_cols = 6
 
 dev_list = np.arange(0, num_rows * num_cols, 1)
 
-# Membrane Parameters
 
-gap = 10  # 10um gap between the membrane and support structure
-support_width = 10  # The width of the support for the suspended layer
-support_pinch_width = 3  # The width of the pinch point for stamping
-support_pinch_length = 2  # The length of the pinch point region
-support_pitch = 0.4  # Ratio of support structure to exposed area
-
-# Membrane parameters
-perforations = False
-
-length = 220
-height = 220
-
-safety = 200  # Space between membranes
-spacing = length + safety + support_width * 2
-
-phc_y_offset = (35 - 0.275) * um  # An arbitrary parameter for centering the devices at the origin
-
-column_size = num_rows * spacing
-pairs = 1
-# PhC Device Parameters
 
 # Unit for all parameters: nm
-
 # Parameters for exposure
 write_field_size = 100e3
 write_field_x_size = 50e3
@@ -85,17 +70,25 @@ edge_offset = 5e3
 corner_bend_rad = 3e3
 corner_bend_pts = 41
 
+num_rows_phc = 12
+num_cols_phc = 12
+spacing_phc = 2*(edge_offset/1e3)+10
+
 acav = [155.5]
 amir = [172.1]
 
-wy_list = [450]
+wy_list = [470]
 wy_end_taper_list = []
-hx_list = [73]
-hy_list = [194, 198, 202]
-mirror_list = [5, 7, 8]
+
+hx_list = [63, 66, 69, 73, 76, 79]
+hy_list = [180, 184, 188, 192, 196, 200]
+
+mirror_list = [10]
 cavity_list = [16]
 taper_holes = [0]
 
+
+phc_dev_list = np.arange(0, num_rows_phc * num_cols_phc, 1)
 param_sweep = np.array(np.meshgrid(acav, amir, wy_list, mirror_list, cavity_list, hx_list, hy_list, taper_holes)).T.reshape(-1, 8).astype(int)
 param_sweep = list(zip(dev_list, param_sweep))
 
@@ -104,7 +97,7 @@ custom_cavity = True
 seg = np.array([1.57385141e-07, 1.58156287e-07, 1.59014195e-07, 1.59789244e-07,
                 1.61512865e-07, 1.63789232e-07, 1.65369591e-07, 1.67000125e-07]) * 1e9
 custom_cavity_list = np.append(np.flip(seg), seg)
-num_guides = 1  # Define the number of blank waveguides for control measurements (0,1,2)
+num_guides = 0  # Define the number of blank waveguides for control measurements (0,1,2)
 
 taper_neff = 1.8
 end_period = np.round(955 / (3.1 * 2), 1)
@@ -143,7 +136,7 @@ linker_xnotches = 0
 linker_ynotches = 0
 
 # Parameter for the support
-support_connector_width = 0.000001e3
+support_connector_width = 1e3 #0.000001e3
 support_notch_size = 400
 support_beam_size = 1e3
 num_xsupport = 2
@@ -172,10 +165,10 @@ support_angle_width = 2.3 * numpy.pi / 180  # 10 degree in radian
 
 # Parameters for the text
 text = True
-textheight = 6e3
-textwidth = textheight * 5.0 / 9.0
+textheight = 8e3
+textwidth = textheight * 20.0 / 9.0
 textsep = textheight * 8.0 / 9.0
-text_dist_to_top = 3e3
+text_dist_to_top = 6e3
 
 matrix_x_size = len(hy_list)
 matrix_y_size = len(mirror_list)
@@ -187,6 +180,35 @@ k = 0
 
 origin_x = 0
 origin_y = 0
+
+# Membrane Parameters
+
+gap = 10  # 10um gap between the membrane and support structure
+support_width = 10  # The width of the support for the suspended layer
+support_pinch_width = 3  # The width of the pinch point for stamping
+support_pinch_length = 2  # The length of the pinch point region
+support_pitch = 0.4  # Ratio of support structure to exposed area
+
+# Membrane parameters
+perforations = False
+
+# length = spacing_phc*12
+# height = ((linker_width / 1e3) * 2 + wy_list[0] / 1e3)*12
+
+length = 150
+height = 200
+
+
+safety = 60 # Space between membranes
+spacing = length + safety + support_width * 2
+spacing_y = height + safety + support_width * 2
+
+
+phc_y_offset = (35 - 0.275) * um  # An arbitrary parameter for centering the devices at the origin
+
+column_size = num_rows * spacing
+pairs = 1
+# PhC Device Parameters
 
 # QFC Device Parameters
 widths = np.linspace(0, 1, devs)
@@ -229,16 +251,37 @@ write_size = (length + safety + gap * 2) * devs
 mark_pos = write_size * um
 
 outer_frame = gdspy.Rectangle((-chip_size / 2, chip_size / 2), (chip_size / 2, -chip_size / 2), layer=4)
-inner_frame = gdspy.Rectangle((-spacing * um * num_rows / 2, spacing * um * num_cols * pairs / 2),
-                              (spacing * um * num_rows / 2, -spacing * um * num_cols * pairs / 2), layer=4)
+inner_frame = gdspy.Rectangle((-spacing * um * num_rows / 2, spacing_y * um * num_cols * pairs / 2),
+                              (spacing * um * num_rows / 2, -spacing_y * um * num_cols * pairs / 2), layer=4)
 frame = gdspy.boolean(outer_frame, inner_frame, "not", layer=4)
 
-if invert == True:
-    frame = gdspy.fast_boolean(outer_frame, cell_main, 'not')
-    cell_main.add(frame)
+
 
 
 def executeWriting():
+
+    for k in range(num_rows_phc):
+
+        # Write multiple rows
+        for j in range(num_cols_phc):
+            identifier = str(j) + str(k)
+
+            if PhCSweeper == True:
+                xpos = (k * spacing_phc - spacing_phc * (num_rows_phc - 1) / 2) * um
+                ypos = ((linker_width / 1e3) * 2 + wy_list[0] / 1e3) / spacing_phc * (
+                            spacing_phc / 2 + j * spacing_phc - spacing_phc * num_cols_phc * pairs / 2) * um
+
+
+                name = num_cols_phc * k + j
+                phc = PhC_Writer(param_sweep[name], end_period=end_period, blank_guides=num_guides, text=text)
+
+                # phc_sweep_y_offset = -34.84
+                phc_pos = gdspy.CellReference(phc, (xpos, ypos + phc_y_offset))
+                phc_sweep.add(phc_pos)
+
+
+    i=0
+
     for k in range(num_rows):
 
         # Write multiple rows
@@ -246,36 +289,49 @@ def executeWriting():
             identifier = str(j) + str(k)
 
             xpos = (k * spacing - spacing * (len(widths) - 1) / 2) * um
-            ypos = (spacing / 2 + j * spacing - spacing * len(gaps) * pairs / 2) * um
-
+            ypos = (spacing_y / 2 + j * spacing_y - spacing_y * len(gaps) * pairs / 2) * um
             # QFC Device
             if writeQFC == True:
                 device = defineDevice(widths[k], ring_r, coupling_l, gaps[j], grating_offset, g)
                 device_pos = gdspy.CellReference(device, (xpos, ypos + ringPos_offset_y))
                 cell_main.add(device_pos)
 
+            if PhCSweeper == True and writePhC == False and i==0:
+                name = num_cols * k + j
+
+                phc_pos = gdspy.CellReference(phc_sweep, (xpos, ypos - phc_y_offset))
+                cell_main.add(phc_pos)
+
             if writePhC == True:
-                name = num_rows * k + j
+                name = num_cols * k + j
                 phc = PhC_Writer(param_sweep[name], end_period=end_period, blank_guides=num_guides, text=text)
 
                 phc_pos = gdspy.CellReference(phc, (xpos, ypos - phc_y_offset))
                 cell_main.add(phc_pos)
 
-            if writeMems == True:
-                membrane = defineMembrane(identifier, spacing, length, height)
+            if writeMems == True and i==0:
+                membrane = defineMembrane(identifier, spacing, spacing_y, length, height, layer=5)
+
+                phc_sweep_frame = gdspy.Rectangle((-length/2, -height/2), (length/2, height/2), layer=5)
+                phc_sweep_frame_cell.add(phc_sweep_frame)
+                phc_sweep_frame_cell_pos = gdspy.CellReference(phc_sweep_frame_cell, (xpos, ypos), magnification=1000)
                 membrane_pos = gdspy.CellReference(membrane, (xpos, ypos), magnification=1000)
+
+                if removeInnerMem == True:
+                    membrane_pos = gdspy.boolean(membrane_pos, phc_sweep_frame_cell_pos, "not", layer=5)
                 cell_main.add(membrane_pos)
 
             # # Supports Mask
 
-            if writeMems and writePhC is True:
-                supportsMask(name, xpos, ypos)
+            if supportsMaskBool == True:
+                if k == 0 and j == 0:
+                    supportsMask(name, xpos, ypos, spacing)
 
             if EBPG_markers == True:
                 ebeam_marks(frame)
             if litho_markers == True:
                 litho_marks()
-
+            i+=1
 
 def defineDevice(wg_w, ring_r, coupling_l, coupling_gap, grating_offset, g):
     # Create the grating couplers
@@ -363,10 +419,10 @@ column_size = num_rows * spacing  # Length of a column
 # Define the cell reference for the support structure
 support_vertices = [(-gap / 2, support_width / 2), (-support_pinch_length / 2, support_pinch_width / 2),
                     (0, support_pinch_width / 2), (0, 0), (-gap / 2, 0)]
-support_1 = gdspy.Polygon(support_vertices, layer=4)
-support_2 = gdspy.Polygon(support_vertices, layer=4)
-support_3 = gdspy.Polygon(support_vertices, layer=4)
-support_4 = gdspy.Polygon(support_vertices, layer=4)
+support_1 = gdspy.Polygon(support_vertices, layer=5)
+support_2 = gdspy.Polygon(support_vertices, layer=5)
+support_3 = gdspy.Polygon(support_vertices, layer=5)
+support_4 = gdspy.Polygon(support_vertices, layer=5)
 support_2.mirror((0, -1), (0, 1))
 support_3.mirror((-1, 0), (1, 0))
 support_4.mirror((0, -1), (0, 1))
@@ -382,19 +438,19 @@ cell_support.add(support_4)
 # cell_membrane_hole.add(membrane_hole)
 
 
-def defineMembrane(identifier, spacing, length, height):
+def defineMembrane(identifier, spacing, spacing_y, length, height, layer = 5):
     # Create a membrane cell for each desired membrane size
 
     cell_membrane_nohole = gdspy.Cell('membrane' + identifier)
 
     # Define the frame for the membrane
-    membrane_outer_frame = gdspy.Rectangle((-spacing / 2, spacing / 2),
-                                           (spacing / 2, -spacing / 2), layer=4)
+    membrane_outer_frame = gdspy.Rectangle((-spacing / 2, spacing_y / 2),
+                                           (spacing / 2, -spacing_y / 2), layer=layer)
     membrane_inner_frame = gdspy.Rectangle((-length / 2 - gap, height / 2 + gap),
-                                           (length / 2 + gap, -height / 2 - gap), layer=4)
-    membrane_frame = gdspy.boolean(membrane_outer_frame, membrane_inner_frame, "not", layer=4)
+                                           (length / 2 + gap, -height / 2 - gap), layer=layer)
+    membrane_frame = gdspy.boolean(membrane_outer_frame, membrane_inner_frame, "not", layer=layer)
     # Define the membrane itself
-    membrane = gdspy.Rectangle((-length / 2, height / 2), (length / 2, -height / 2), layer=4)
+    membrane = gdspy.Rectangle((-length / 2, height / 2), (length / 2, -height / 2), layer=layer)
 
     # Add to the membrane cell
     cell_membrane_nohole.add(membrane_frame)
@@ -409,12 +465,12 @@ def defineMembrane(identifier, spacing, length, height):
         for i in perfPoints:
             x = i[0] * perfPos
             y = i[1] * perfPos
-            perf = gdspy.Rectangle((x, y), (x + perfSize, y + perfSize), layer=4)
-            membrane = gdspy.boolean(membrane, perf, "not", layer=4)
+            perf = gdspy.Rectangle((x, y), (x + perfSize, y + perfSize), layer=layer)
+            membrane = gdspy.boolean(membrane, perf, "not", layer=layer)
 
-        perf = gdspy.Rectangle((-perfSize / 2, -perfSize / 2), (perfSize / 2, perfSize / 2), layer=4)
+        perf = gdspy.Rectangle((-perfSize / 2, -perfSize / 2), (perfSize / 2, perfSize / 2), layer=layer)
 
-        perf_cut = gdspy.boolean(membrane, perf, "not", layer=4)
+        perf_cut = gdspy.boolean(membrane, perf, "not", layer=layer)
         cell_membrane_nohole.add(perf_cut)
 
     else:
@@ -1179,21 +1235,57 @@ def write_circ_grating(beamdata, beam_dy_list, circ_grating_support=None, layer=
     return _circ_grating_combined
 
 
-def write_pattern_number(cell, xloc, yloc, pattern_number, layer=3):
-    global textheight, textwidth, textsep
+from matplotlib.font_manager import FontProperties
+from matplotlib.textpath import TextPath
 
-    text_to_write = str(pattern_number)
-    if pattern_number == 0:
-        num_digit = 1
-    else:
-        num_digit = numpy.ceil(math.log10(pattern_number)) + 1
 
-    _pattern_number_to_write = gdspy.Text(
-        text_to_write, textheight,
-        (xloc - textwidth / 2.0 - textsep * (num_digit - 1) / 4.0, yloc - textheight / 2.0),
-        layer=layer)
-
-    return _pattern_number_to_write
+def write_pattern_number(pattern_number, size, position, font_prop=None, tolerance=0.1):
+    text = "+" + str(pattern_number)
+    path = TextPath(position, text, size=float(size), prop=font_prop)
+    polys = []
+    xmax = position[0]
+    for points, code in path.iter_segments():
+        if code == path.MOVETO:
+            c = gdspy.Curve(*points, tolerance=tolerance)
+        elif code == path.LINETO:
+            c.L(*points)
+        elif code == path.CURVE3:
+            c.Q(*points)
+        elif code == path.CURVE4:
+            c.C(*points)
+        elif code == path.CLOSEPOLY:
+            poly = c.get_points()
+            if poly.size > 0:
+                if poly[:, 0].min() < xmax:
+                    i = len(polys) - 1
+                    while i >= 0:
+                        if gdspy.inside(
+                            poly[:1], [polys[i]], precision=0.1 * tolerance
+                        )[0]:
+                            p = polys.pop(i)
+                            poly = gdspy.boolean(
+                                [p],
+                                [poly],
+                                "xor",
+                                precision=0.1 * tolerance,
+                                max_points=0,
+                            ).polygons[0]
+                            break
+                        elif gdspy.inside(
+                            polys[i][:1], [poly], precision=0.1 * tolerance
+                        )[0]:
+                            p = polys.pop(i)
+                            poly = gdspy.boolean(
+                                [p],
+                                [poly],
+                                "xor",
+                                precision=0.1 * tolerance,
+                                max_points=0,
+                            ).polygons[0]
+                        i -= 1
+                xmax = max(xmax, poly[:, 0].max())
+                polys.append(poly)
+    return polys
 
 
 def write_outer_box(cell, beamdata, beam_dy_list, grating_spacer=False, round_corner=False, direct_write_area=False,
@@ -1442,9 +1534,11 @@ def write_outer_frame(cell, beamdata, beam_dy_list, outer_box, pattern_number=No
     _frame_write_area = write_support_region(_support_inner, layer)
 
     if pattern_number is not None:
-        _pattern_number_to_write = write_pattern_number(cell, _support_inner.xpos,
-                                                        _support_inner.ypos + _support_inner.dy / 2.0 + 2e3,
-                                                        pattern_number, layer)
+        _pattern_number_to_write = write_pattern_number(pattern_number, textheight, (_support_inner.xpos-8e3,
+                                                        _support_inner.ypos + _support_inner.dy / 2.0 + 2.5e3))
+
+        # write_pattern_number(pattern_number, size=textheight, position=(xloc, yloc), font_prop=None, tolerance=0.1):
+
 
         _frame_write_area = gdspy.fast_boolean(_frame_write_area, _pattern_number_to_write, 'not', max_points=0,
                                                layer=layer)
@@ -1485,7 +1579,6 @@ def PhC_Writer(param_sweep, end_period=end_period, blank_guides=num_guides, text
     num_cav = param_sweep[1][4]
     num_tap = param_sweep[1][7]
     num_mirr = param_sweep[1][3] * 2
-
     beams = gdspy.Cell(str(param_sweep[0]))
 
     rowicolj = PLTdata()
@@ -1579,13 +1672,19 @@ def ebeam_marks(frame):  # Marks defined in the Heidelberg for EBPG alignment
     cell_main.add(frame)
 
 
-def supportsMask(name, xpos, ypos):
+def supportsMask(name, xpos, ypos, spacing):
     x_frame = write_field_x_size / 2 * 0.9
     y_frame = write_field_y_size / 2 * 0.9
 
+    x_frame = spacing*6 * um /2
+    y_frame = ((linker_width/1e3)*2+wy_list[0]/1e3) * um * 12/2
+
+
     phc_frame = gdspy.Rectangle((-x_frame, -y_frame), (x_frame, y_frame), layer=4)
 
+
     support_mask_inner = 0.82
+    spacing = 440
     support_mask_out = gdspy.Rectangle((-spacing * support_mask_inner * um / 2, spacing * support_mask_inner * um / 2),
                                        (spacing * support_mask_inner * um / 2, -spacing * support_mask_inner * um / 2))
 
@@ -1594,10 +1693,15 @@ def supportsMask(name, xpos, ypos):
     support_mask_frame = gdspy.boolean(support_mask_out, phc_frame, "not", layer=6)
     holder.add(support_mask_frame)
 
-    support_mask_pos = gdspy.CellReference(holder, (xpos, ypos))
+    support_mask_pos = gdspy.CellReference(holder, (x_frame/2, 3300))
     cell_main.add(support_mask_pos)
+
 
 
 executeWriting()
 
-gdspy.write_gds('2023-11-10-O1.gds', unit=1.0e-9, precision=1.0e-11)  # Write the GDS file
+if invert == True:
+    frame = gdspy.fast_boolean(outer_frame, cell_main, 'not')
+    cell_main.add(frame)
+
+gdspy.write_gds(filename, unit=1.0e-9, precision=1.0e-11)  # Write the GDS file

@@ -28,7 +28,7 @@ from matplotlib.patches import Polygon as MatplotlibPolygon
 
 
 def create_mpl_polygon_from_polygon_set(polygon_set):
-    """ Converts a gdspy Polygon Set toa MatPlotLib MatplotlibPolygon. """
+    """ Converts a gdspy Polygon Set toa MatPlotLib matplotlib.patches Polygon. """
     vertices = polygon_set.polygons[0]
     return MatplotlibPolygon(vertices, closed=True, edgecolor='black', facecolor='none')
 
