@@ -17,6 +17,7 @@ class Unit(enum.Enum):
     um = 10**3
     mm = 10**6
 
+
 # nm = 1
 # um = 1000
 
@@ -1719,7 +1720,7 @@ root.addHandler(handler)
 logger = logging.getLogger(__name__)
 
 
-class GradingCoupler:
+class GratingCoupler:
 
     """
     Where the photons are inputted.
@@ -1783,11 +1784,11 @@ class PhcGroup:
 
 class Rectangle(gdspy.Rectangle):
 
-    def __init__(self, width, height, layer=0, center_to_origin=True):
+    def __init__(self, width, height, layer=0, datatype=0, center_to_origin=True):
         self.width = width
         self.height = height
         self.center_to_origin = center_to_origin
-        super().__init__(self.top_left_coords, self.bot_right_coords, layer=layer)
+        super().__init__(self.top_left_coords, self.bot_right_coords, layer=layer, datatype=datatype)
 
     @cached_property
     def top_left_coords(self):
@@ -1838,10 +1839,8 @@ class Component:
             self.god_cell.add(geometry)
 
 
-
-
 """
-A cell that is referenced must have the referenced geometry exist on some cell. 
+A cell that is referenced must have the referenced geometry exist on some cell.
 
 """
 
@@ -1852,10 +1851,17 @@ class WorkArea(Component):
 
     """
 
-    EBPG_MARK_FACTOR = 0.75  # previously ebpg_mark_factor
+    POSITION_ID_CELL = gdspy.Cell("position_ids_cell")
+    POSITION_ID_CELL_LAYER = 0
     POSITION_ID_SIDE_LENGTH = 20 * Unit.um.value
+    POSITION_ID_SCALAR = 1.2                           # EPBG Alignment Marks (previously ebpg_mark_factor)
 
-    POSITION_ID_CELL = gdspy.Cell("position_id_cell")
+    LITHO_MARKS_CELL = gdspy.Cell("litho_marks_cell")
+    LITHO_MARKS_CELL_LAYER = 1
+    LITHO_MARKS_HIEGHT = 20 * Unit.um.value            # previously mark_len
+    LITHO_MARKS_WIDTH = 4 * Unit.um.value              # previously mark_cross
+    LITHO_MARKS_SCALAR = 1.4                           # EPBG Alignment Marks (previously ebpg_mark_factor)
+    LITHO_MARK_COUNT = 32                              # The amount of litho marks there should be for each side
 
     @dataclass
     class PositionId:
@@ -1863,8 +1869,11 @@ class WorkArea(Component):
         add_orienter: bool
         coords: set  # no need to normalize to the origin because the square in the POSITION_ID_CELL is already centered
 
-        def get_referenced_cell(self):
-            return gdspy.CellReference(WorkArea.POSITION_ID_CELL, self.coords)
+        def get_referenced_cells(self):
+            referenced_cells = [gdspy.CellReference(WorkArea.POSITION_ID_CELL, self.coords)]
+            if self.add_orienter:
+                referenced_cells += self.get_orienters()
+            return referenced_cells
         
         def get_orienters(self):
             x_sign = 1 if self.coords[0] > 0 else -1
@@ -1873,60 +1882,82 @@ class WorkArea(Component):
                 gdspy.CellReference(WorkArea.POSITION_ID_CELL, (self.coords[0], self.coords[1] + 600 * Unit.um.value * y_sign)),
                 gdspy.CellReference(WorkArea.POSITION_ID_CELL, (self.coords[0] + 600 * Unit.um.value * x_sign, self.coords[1])),
             ]
+        
+    class LithoMark:
 
-    def __init__(self, x_length, y_length, layer, add_position_ids=True) -> None:
+        def __init__(self) -> None:
+            pass
+
+    def __init__(self, x_length, y_length, layer, add_position_ids=True, add_litho_marks=True) -> None:
         super().__init__()
         self.x_length = x_length
         self.y_length = y_length
         self.layer = layer
         self.add_position_ids = add_position_ids
+        self.add_litho_marks = add_litho_marks
 
     @cached_property
     def manufacturing_boundary(self):
-        """ # The maximum chip area (previously: outer_frame). """
+        """ The maximum chip area (previously: outer_frame). """
         return Rectangle(self.x_length, self.y_length, layer=4)
     
     @cached_property
-    def writing_frame(self):
-        """ # The main area the devices are written (previously: inner_frame). """
+    def device_writing_frame(self):
+        """ The main area the devices are written (previously: inner_frame). """
         return Rectangle(spacing * Unit.um.value * num_rows, spacing_y * Unit.um.value * num_cols * pairs, layer=self.layer)
 
     def create_position_id_rect(self):
         """ This is a rectangle we're going to reference for creating the position_ids. """
-        rect = Square(side_length=self.POSITION_ID_SIDE_LENGTH, layer=self.layer)
-        self.POSITION_ID_CELL.add(rect)
-        return rect
+        self.POSITION_ID_CELL.add(Square(side_length=self.POSITION_ID_SIDE_LENGTH, layer=self.POSITION_ID_CELL_LAYER))
 
     def apply_position_ids(self, polygon):  # Marks defined in the Heidelberg for EBPG alignment
         """ Marks defined in the Heidelberg for EBPG alignment (previously ebeam_marks). """
         # we must first create the rect and add it to the POSITION_ID_CELL
         self.create_position_id_rect()
-        # shouldn't the position identifiers for the ebpg alignment be based on the bounding box of the inner frame? TODO
-        write_size = (length + safety + gap * 2) * devs
-        mark_pos = write_size * Unit.um.value
-        
-        ebpg_mark_factor = 0.75  # EPBG Alignment Marks
         position_ids = [
-            self.PositionId(name="top_right",    add_orienter=True,  coords=[mark_pos * ebpg_mark_factor, mark_pos * ebpg_mark_factor]),
-            self.PositionId(name="bottom_right", add_orienter=False, coords=[mark_pos * ebpg_mark_factor, -mark_pos * ebpg_mark_factor]),
-            self.PositionId(name="top_left",     add_orienter=False, coords=[-mark_pos * ebpg_mark_factor, mark_pos * ebpg_mark_factor]),
-            self.PositionId(name="bottom_left",  add_orienter=True,  coords=[-mark_pos * ebpg_mark_factor, -mark_pos * ebpg_mark_factor]),
+            self.PositionId(name="top_right",    coords=(self.device_writing_frame.max_x * self.POSITION_ID_SCALAR, self.device_writing_frame.max_y * self.POSITION_ID_SCALAR), add_orienter=False),
+            self.PositionId(name="bottom_right", coords=(self.device_writing_frame.max_x * self.POSITION_ID_SCALAR, self.device_writing_frame.min_y * self.POSITION_ID_SCALAR), add_orienter=False),
+            self.PositionId(name="top_left",     coords=(self.device_writing_frame.min_x * self.POSITION_ID_SCALAR, self.device_writing_frame.max_y * self.POSITION_ID_SCALAR), add_orienter=False),
+            self.PositionId(name="bottom_left",  coords=(self.device_writing_frame.min_x * self.POSITION_ID_SCALAR, self.device_writing_frame.min_y * self.POSITION_ID_SCALAR), add_orienter=True),
         ]
         for position_id in position_ids:
-            referenced_cells = [position_id.get_referenced_cell()]
-            if position_id.add_orienter:
-                referenced_cells += position_id.get_orienters()
-            for referenced_cell in referenced_cells:
-                polygon = gdspy.boolean(polygon, referenced_cell, "not", layer=self.layer)
+            for referenced_cell in position_id.get_referenced_cells():
+                polygon = gdspy.boolean(polygon, referenced_cell, "not", layer=self.POSITION_ID_CELL_LAYER)
         return polygon
 
+    def create_litho_mark_rects(self):
+        """ Just like in create_position_id_rect, we reference the same geometry in some reference cell. """
+        self.LITHO_MARKS_CELL.add(
+            [
+                h_rect := Rectangle(width=self.LITHO_MARKS_WIDTH, height=self.LITHO_MARKS_HIEGHT, layer=self.LITHO_MARKS_CELL_LAYER),  # purely for readability
+                v_rect := Rectangle(width=self.LITHO_MARKS_HIEGHT, height=self.LITHO_MARKS_WIDTH, layer=self.LITHO_MARKS_CELL_LAYER),
+            ]
+        )
+
+    def apply_litho_marks(self, polygon):
+        """ (previously litho_marks). """
+        self.create_litho_mark_rects()
+        x_coords = np.linspace(self.device_writing_frame.min_x * self.LITHO_MARKS_SCALAR, self.device_writing_frame.max_x * self.LITHO_MARKS_SCALAR, num=self.LITHO_MARK_COUNT)
+        y_coords = np.linspace(self.device_writing_frame.min_y * self.LITHO_MARKS_SCALAR, self.device_writing_frame.max_y * self.LITHO_MARKS_SCALAR, num=self.LITHO_MARK_COUNT)
+        referenced_cells = []
+        for y_i, y_coord in enumerate(y_coords):
+            for x_i, x_coord in enumerate(x_coords):
+                if 0 < y_i < len(y_coords) -1 and 0 < x_i < len(x_coords) -1:
+                    continue
+                print(x_coord, y_coord)
+                referenced_cells.append(gdspy.CellReference(self.LITHO_MARKS_CELL, (x_coord, y_coord)))
+                self.god_cell.add(referenced_cells[-1])
+        return polygon
+    
     @cached_property
     def polygon(self):
         """ # The main area the devices are written (previously: frame). """
-        frame_polygon = gdspy.boolean(self.manufacturing_boundary, self.writing_frame, "not", layer=self.layer)
+        polygon = gdspy.boolean(self.manufacturing_boundary, self.device_writing_frame, "not", layer=self.layer)
         if self.add_position_ids:
-            frame_polygon = self.apply_position_ids(frame_polygon)
-        return frame_polygon
+            polygon = self.apply_position_ids(polygon)
+        if self.add_litho_marks:
+            polygon = self.apply_litho_marks(polygon)
+        return polygon
     
     @property
     def geometries_to_add(self):
@@ -1958,6 +1989,12 @@ class Creator:
             y_length=6 * Unit.mm.value,
             layer=4,
             add_position_ids=True,
+            add_litho_marks=True,
+        )
+
+        self.phc = Phc(
+            beam=Beam(),
+            grating_coupler=GratingCoupler(),
         )
 
     @cached_property
