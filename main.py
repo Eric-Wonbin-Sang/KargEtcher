@@ -1436,47 +1436,47 @@ def write_support_region(innerframe, layer=3):
     return _support_combined
 
 
-def write_outer_frame(cell, beamdata, beam_dy_list, outer_box, pattern_number=None, reverse_tone=False, layer=3):
+# def write_outer_frame(cell, beamdata, beam_dy_list, outer_box, pattern_number=None, reverse_tone=False, layer=3):
 
-    _ymin = beamdata.ypos - beam_dy_list[0] / 2.0 - edge_offset
-    _ymax = _ymin + (num_beam - 1) * beam_spacing + numpy.sum(beam_dy_list) + edge_offset * 2
+#     _ymin = beamdata.ypos - beam_dy_list[0] / 2.0 - edge_offset
+#     _ymax = _ymin + (num_beam - 1) * beam_spacing + numpy.sum(beam_dy_list) + edge_offset * 2
 
-    _tmp_beamdata = copy.copy(beamdata)
-    _support_inner = PLTdata()
-    _support_inner.xpos = _tmp_beamdata.xpos
-    _support_inner.ypos = (_ymin + _ymax) / 2.0
-    _support_inner.dx = beamdata.dx + 2 * linker_width + 2 * linker_edgeoffset
-    _support_inner.dy = _ymax - _ymin
+#     _tmp_beamdata = copy.copy(beamdata)
+#     _support_inner = PLTdata()
+#     _support_inner.xpos = _tmp_beamdata.xpos
+#     _support_inner.ypos = (_ymin + _ymax) / 2.0
+#     _support_inner.dx = beamdata.dx + 2 * linker_width + 2 * linker_edgeoffset
+#     _support_inner.dy = _ymax - _ymin
 
-    _frame_write_area = write_support_region(_support_inner, layer)
+#     _frame_write_area = write_support_region(_support_inner, layer)
 
-    if pattern_number is not None:
-        _pattern_number_to_write = write_pattern_number(pattern_number, textheight, (_support_inner.xpos-8e3,
-                                                        _support_inner.ypos + _support_inner.dy / 2.0 + 2.5e3))
+#     if pattern_number is not None:
+#         _pattern_number_to_write = write_pattern_number(pattern_number, textheight, (_support_inner.xpos-8e3,
+#                                                         _support_inner.ypos + _support_inner.dy / 2.0 + 2.5e3))
 
-        # write_pattern_number(pattern_number, size=textheight, position=(xloc, yloc), font_prop=None, tolerance=0.1):
+#         # write_pattern_number(pattern_number, size=textheight, position=(xloc, yloc), font_prop=None, tolerance=0.1):
 
 
-        _frame_write_area = gdspy.fast_boolean(_frame_write_area, _pattern_number_to_write, 'not', max_points=0,
-                                               layer=layer)
+#         _frame_write_area = gdspy.fast_boolean(_frame_write_area, _pattern_number_to_write, 'not', max_points=0,
+#                                                layer=layer)
 
-    if reverse_tone is False:
-        bounds = _frame_write_area.get_bounding_box()
+#     if reverse_tone is False:
+#         bounds = _frame_write_area.get_bounding_box()
 
-        shift = 5000
+#         shift = 5000
 
-        box = gdspy.Rectangle(np.array(bounds[0]) - shift, np.array(bounds[1]) + shift, layer=layer)
-        bounds_inner = outer_box.get_bounding_box()
-        box_inner = gdspy.Rectangle(bounds_inner[0], bounds_inner[1], layer=layer)
-        box_inner = box_inner.fillet(corner_bend_rad, points_per_2pi=corner_bend_pts)
+#         box = gdspy.Rectangle(np.array(bounds[0]) - shift, np.array(bounds[1]) + shift, layer=layer)
+#         bounds_inner = outer_box.get_bounding_box()
+#         box_inner = gdspy.Rectangle(bounds_inner[0], bounds_inner[1], layer=layer)
+#         box_inner = box_inner.fillet(corner_bend_rad, points_per_2pi=corner_bend_pts)
 
-        _box_write_area_reverse = gdspy.fast_boolean(box, _frame_write_area, 'not', max_points=0, layer=layer)
-        _box_write_area_reverse = gdspy.fast_boolean(_box_write_area_reverse, box_inner, 'not', max_points=0,
-                                                     layer=layer)
-        cell.add(_box_write_area_reverse)
+#         _box_write_area_reverse = gdspy.fast_boolean(box, _frame_write_area, 'not', max_points=0, layer=layer)
+#         _box_write_area_reverse = gdspy.fast_boolean(_box_write_area_reverse, box_inner, 'not', max_points=0,
+#                                                      layer=layer)
+#         cell.add(_box_write_area_reverse)
 
-    else:
-        cell.add(_frame_write_area)
+#     else:
+#         cell.add(_frame_write_area)
 
 
 class PLTdata:
@@ -1487,78 +1487,78 @@ class PLTdata:
         self.dy = None
 
 
-def PhC_Writer(param_sweep, end_period=end_period, blank_guides=num_guides, text=text):
-    acav = param_sweep[1][0]
-    amir = param_sweep[1][1]
-    hx = param_sweep[1][5]
-    hy = param_sweep[1][6]
-    wy = param_sweep[1][2]
-    num_cav = param_sweep[1][4]
-    num_tap = param_sweep[1][7]
-    num_mirr = param_sweep[1][3] * 2
-    beams = gdspy.Cell(str(param_sweep[0]))
+# def PhC_Writer(param_sweep, end_period=end_period, blank_guides=num_guides, text=text):
+#     acav = param_sweep[1][0]
+#     amir = param_sweep[1][1]
+#     hx = param_sweep[1][5]
+#     hy = param_sweep[1][6]
+#     wy = param_sweep[1][2]
+#     num_cav = param_sweep[1][4]
+#     num_tap = param_sweep[1][7]
+#     num_mirr = param_sweep[1][3] * 2
+#     beams = gdspy.Cell(str(param_sweep[0]))
 
-    rowicolj = PLTdata()
-    rowicolj.dx = 10e3
-    rowicolj.dy = wy
+#     rowicolj = PLTdata()
+#     rowicolj.dx = 10e3
+#     rowicolj.dy = wy
 
-    rowicolj.xpos = 0
-    rowicolj.ypos = 0
-    dy_list = write_beam_array(beams, rowicolj)
+#     rowicolj.xpos = 0
+#     rowicolj.ypos = 0
+#     dy_list = write_beam_array(beams, rowicolj)
 
-    circ_rowicolj = PLTdata()
-    circ_rowicolj.xpos = rowicolj.xpos - hole_pos_offset
-    circ_rowicolj.ypos = rowicolj.ypos
-    circ_rowicolj.dx = hx
-    circ_rowicolj.dy = hy
+#     circ_rowicolj = PLTdata()
+#     circ_rowicolj.xpos = rowicolj.xpos - hole_pos_offset
+#     circ_rowicolj.ypos = rowicolj.ypos
+#     circ_rowicolj.dx = hx
+#     circ_rowicolj.dy = hy
 
-    write_hole_2D(beams, rowicolj, circ_rowicolj, dy_list, num_cav_hole=num_cav,
-                  num_mir_hole_L=num_mirr / 2,
-                  num_mir_hole_R=num_mirr / 2, acav=acav, amir=amir, end_period=end_period, num_end_taper=num_tap,
-                  guides=blank_guides,
-                  end_taper_L=True,
-                  end_taper_R=True, reverse_tone=reverse_tone, edge_overdose=edge_overdose, ring_overdose=ring_overdose,
-                  ring_underdose=ring_underdose, edge_underdose=ring_underdose)
+#     write_hole_2D(beams, rowicolj, circ_rowicolj, dy_list, num_cav_hole=num_cav,
+#                   num_mir_hole_L=num_mirr / 2,
+#                   num_mir_hole_R=num_mirr / 2, acav=acav, amir=amir, end_period=end_period, num_end_taper=num_tap,
+#                   guides=blank_guides,
+#                   end_taper_L=True,
+#                   end_taper_R=True, reverse_tone=reverse_tone, edge_overdose=edge_overdose, ring_overdose=ring_overdose,
+#                   ring_underdose=ring_underdose, edge_underdose=ring_underdose)
 
-    outer_box = write_outer_box(beams, rowicolj, dy_list, grating_spacer=grating_spacer, round_corner=False,
-                                direct_write_area=True, write_linker=True,
-                                circ_grating=True, reverse_tone=reverse_tone)
+#     outer_box = write_outer_box(beams, rowicolj, dy_list, grating_spacer=grating_spacer, round_corner=False,
+#                                 direct_write_area=True, write_linker=True,
+#                                 circ_grating=True, reverse_tone=reverse_tone)
 
-    if text == False:
-        write_outer_frame(beams, rowicolj, dy_list, outer_box, pattern_number=None, reverse_tone=reverse_tone)
-    else:
-        write_outer_frame(beams, rowicolj, dy_list, outer_box, pattern_number=param_sweep[0], reverse_tone=reverse_tone)
+#     if text == False:
+#         write_outer_frame(beams, rowicolj, dy_list, outer_box, pattern_number=None, reverse_tone=reverse_tone)
+#     else:
+#         write_outer_frame(beams, rowicolj, dy_list, outer_box, pattern_number=param_sweep[0], reverse_tone=reverse_tone)
 
-    return beams
+#     return beams
 
 
-def litho_marks():
-    # Define the Heidelberg alignment marks
-    heid_mark_factor = 0.9
-    heid_mark_pos = mark_pos * heid_mark_factor
+# def litho_marks():
+#     # Define the Heidelberg alignment marks
+#     heid_mark_factor = 0.9
+#     heid_mark_pos = mark_pos * heid_mark_factor
 
-    mark_len = 20 * um
-    mark_cross = 4 * um
-    markersSpacing = 60 * um
+#     mark_len = 20 * um
+#     mark_cross = 4 * um
+#     markersSpacing = 60 * um
 
-    horz = gdspy.Rectangle((-mark_len / 2, -mark_cross / 2), (mark_len / 2, mark_cross / 2), layer=7)
-    vert = gdspy.Rectangle((-mark_cross / 2, -mark_len / 2), (mark_cross / 2, mark_len / 2), layer=7)
-    heid_alignment_mark.add([horz, vert])
+#     horz = gdspy.Rectangle((-mark_len / 2, -mark_cross / 2), (mark_len / 2, mark_cross / 2), layer=7)
+#     vert = gdspy.Rectangle((-mark_cross / 2, -mark_len / 2), (mark_cross / 2, mark_len / 2), layer=7)
+#     heid_alignment_mark.add([horz, vert])
 
-    side = np.linspace(-heid_mark_pos, heid_mark_pos, int(heid_mark_pos * 2 / (markersSpacing + mark_len)))
-    corners = [heid_mark_pos, -heid_mark_pos]
+#     side = np.linspace(-heid_mark_pos, heid_mark_pos, int(heid_mark_pos * 2 / (markersSpacing + mark_len)))
+#     corners = [heid_mark_pos, -heid_mark_pos]
 
-    blank = np.empty(len(side))
-    for i in corners:
-        blank.fill(i)
+#     blank = np.empty(len(side))
+#     for i in corners:
+#         blank.fill(i)
 
-        side1 = list(zip(blank, side))
-        side2 = list(zip(side, blank))
+#         side1 = list(zip(blank, side))
+#         side2 = list(zip(side, blank))
 
-        sides = side1 + side2
-        for coord in sides:
-            mark = gdspy.CellReference(heid_alignment_mark, coord)
-            cell_main.add(mark)
+#         sides = side1 + side2
+#         for coord in sides:
+#             mark = gdspy.CellReference(heid_alignment_mark, coord)
+#             cell_main.add(mark)
 
 
 # def ebeam_marks(frame):  # Marks defined in the Heidelberg for EBPG alignment
@@ -1612,8 +1612,6 @@ def supportsMask(name, xpos, ypos, spacing):
 
     support_mask_pos = gdspy.CellReference(holder, (x_frame/2, 3300))
     cell_main.add(support_mask_pos)
-
-
 
 
 def executeWriting():
@@ -1687,8 +1685,8 @@ def executeWriting():
 
             # if EBPG_markers == True:
             #     ebeam_marks(frame)
-            if litho_markers == True:
-                litho_marks()
+            # if litho_markers == True:
+            #     litho_marks()
             i+=1
 
 
@@ -1720,66 +1718,23 @@ root.addHandler(handler)
 logger = logging.getLogger(__name__)
 
 
-class GratingCoupler:
-
-    """
-    Where the photons are inputted.
+class Component:
     
     """
-
-
-class Hole:
-
+    
     """
-    This is the cavity that the photons bounce around in.
+    
+    god_cell = gdspy.Cell("god_cell")
+    reference_cell = gdspy.Cell("reference_cell")
 
-    """
+    @abstractproperty
+    def polygon(self):
+        """ asdasd. """
 
-
-class Beam:
-
-    """
-    The area that houses the holes.
-
-    Note:    
-        This is a 1 dimmensional beam. There can be more in the future. TODO
-    """
-
-    pass
-
-
-class LinearPattern:
-
-    """
-    This is for defining how many copies of a Phc you want for compensating for manufacturing errors.
-
-    """
-
-    def __init__(self, x_count=1, y_count=1) -> None:
-        self.x_count = x_count
-        self.y_count = y_count
-
-
-class Phc:
-
-    """
-    The photonic crystal cavity.
-
-    """
-
-    def __init__(self, beam, grading_coupler) -> None:
-        pass
-
-
-class PhcGroup:
-
-    """ 
-    A group of Phcs.
-
-    Phcs are written in groups to accommodate for any manufacturing errors. Not all Phcs within a group are neccesarily
-    the same as test Phcs with no beam holes are created to test light transmittance.
-
-    """
+    @classmethod
+    def add_components_to_god_cell(cls, components):
+        for component in components:
+            cls.god_cell.add(component.polygon)
 
 
 class Rectangle(gdspy.Rectangle):
@@ -1825,24 +1780,200 @@ class Square(Rectangle):
         super().__init__(side_length, side_length, layer, center_to_origin)
 
 
-class Component:
+class Hole:
 
-    god_cell = gdspy.Cell("god_cell")
-    reference_cell = gdspy.Cell("reference_cell")
+    """
+    This is the cavity that the photons bounce around in.
 
-    @abstractproperty
-    def geometries_to_add(self):
-        """ A list of gdspy objects that get added to the god_cell. """
-
-    def add_geometries_to_god_cell(self):
-        for geometry in self.geometries_to_add:
-            self.god_cell.add(geometry)
+    """
 
 
-"""
-A cell that is referenced must have the referenced geometry exist on some cell.
+class Beam(Rectangle):
 
-"""
+    """
+    The area that houses the holes.
+
+    Note:    
+        This is a 1 dimmensional beam. There can be more in the future. TODO
+    """
+
+
+class GratingCoupler:
+
+    """
+    Where the photons are inputted.
+    
+    """
+
+
+class LinearPattern:
+
+    """
+    This is for defining how many copies of a Phc you want for compensating for manufacturing errors.
+
+    """
+
+    def __init__(self, x_count=1, y_count=1) -> None:
+        self.x_count = x_count
+        self.y_count = y_count
+
+
+class Phc(Component):
+
+    """
+    The photonic crystal cavity.
+
+    """
+
+    phc_instances = {}
+
+    BOUNDING_RECTANGLE_SCALAR = 1.2
+
+    def __new__(cls, beam, grating_coupler, enable_bounding_rectangle=True):
+        # not sure why super is needed here? TODO
+        instance = super().__init__(f"phc_{len(cls.phc_instances)}", beam, grating_coupler, enable_bounding_rectangle)
+        cls.phc_instances[len(cls.phc_instances)] = instance
+        return instance
+
+    def __init__(self, key, beam, grating_coupler, enable_bounding_rectangle=True) -> None:
+        super().__init__()
+        self.key = key
+        self.beam = beam                        # should be referenced as ReferenecCells
+        self.grating_coupler = grating_coupler  # should be referenced as ReferenecCells
+        self.enable_bounding_rectangle = enable_bounding_rectangle
+
+        self.bounding_box_cell = gdspy.Cell(f"{self.name}_bounding_box_cell")
+
+        self.temp = self.PhC_Writer()
+
+    @cached_property
+    def bounding_rectangle(self):
+        rect = Rectangle(
+            width=self.grating_coupler.width * self.BOUNDING_RECTANGLE_SCALAR, 
+            height=self.grating_coupler.height * self.BOUNDING_RECTANGLE_SCALAR,
+        )
+        self.BOUNDING_RECTANGLE_CELL.add(rect)
+        return rect
+
+    def write_outer_frame(self, cell, beamdata, beam_dy_list, outer_box, pattern_number=None, reverse_tone=False, layer=3):
+
+        _ymin = beamdata.ypos - beam_dy_list[0] / 2.0 - edge_offset
+        _ymax = _ymin + (num_beam - 1) * beam_spacing + numpy.sum(beam_dy_list) + edge_offset * 2
+
+        _tmp_beamdata = copy.copy(beamdata)
+        _support_inner = PLTdata()
+        _support_inner.xpos = _tmp_beamdata.xpos
+        _support_inner.ypos = (_ymin + _ymax) / 2.0
+        _support_inner.dx = beamdata.dx + 2 * linker_width + 2 * linker_edgeoffset
+        _support_inner.dy = _ymax - _ymin
+
+        _frame_write_area = write_support_region(_support_inner, layer)
+
+        if pattern_number is not None:
+            _pattern_number_to_write = write_pattern_number(pattern_number, textheight, (_support_inner.xpos-8e3,
+                                                            _support_inner.ypos + _support_inner.dy / 2.0 + 2.5e3))
+
+            # write_pattern_number(pattern_number, size=textheight, position=(xloc, yloc), font_prop=None, tolerance=0.1):
+
+
+            _frame_write_area = gdspy.fast_boolean(_frame_write_area, _pattern_number_to_write, 'not', max_points=0,
+                                                layer=layer)
+
+        if reverse_tone is False:
+            bounds = _frame_write_area.get_bounding_box()
+
+            shift = 5000
+
+            box = gdspy.Rectangle(np.array(bounds[0]) - shift, np.array(bounds[1]) + shift, layer=layer)
+            bounds_inner = outer_box.get_bounding_box()
+            box_inner = gdspy.Rectangle(bounds_inner[0], bounds_inner[1], layer=layer)
+            box_inner = box_inner.fillet(corner_bend_rad, points_per_2pi=corner_bend_pts)
+
+            _box_write_area_reverse = gdspy.fast_boolean(box, _frame_write_area, 'not', max_points=0, layer=layer)
+            _box_write_area_reverse = gdspy.fast_boolean(_box_write_area_reverse, box_inner, 'not', max_points=0,
+                                                        layer=layer)
+            cell.add(_box_write_area_reverse)
+
+        else:
+            cell.add(_frame_write_area)
+
+    def PhC_Writer(self):
+
+        param_sweep = np.array(np.meshgrid(acav, amir, wy_list, mirror_list, cavity_list, hx_list, hy_list, taper_holes)).T.reshape(-1, 8).astype(int)
+        param_sweep = list(zip(dev_list, param_sweep))
+        
+        end_period = np.round(955 / (3.1 * 2), 1)
+
+        blank_guides = 0  # Define the number of blank waveguides for control measurements (0,1,2)
+
+        text = True
+
+        acav = param_sweep[1][0]
+        amir = param_sweep[1][1]
+        hx = param_sweep[1][5]
+        hy = param_sweep[1][6]
+        wy = param_sweep[1][2]
+        num_cav = param_sweep[1][4]
+        num_tap = param_sweep[1][7]
+        num_mirr = param_sweep[1][3] * 2
+        beams = gdspy.Cell(str(param_sweep[0]))
+
+        rowicolj = PLTdata()
+        rowicolj.dx = 10e3
+        rowicolj.dy = wy
+
+        rowicolj.xpos = 0
+        rowicolj.ypos = 0
+        dy_list = write_beam_array(beams, rowicolj)
+
+        circ_rowicolj = PLTdata()
+        circ_rowicolj.xpos = rowicolj.xpos - hole_pos_offset
+        circ_rowicolj.ypos = rowicolj.ypos
+        circ_rowicolj.dx = hx
+        circ_rowicolj.dy = hy
+
+        write_hole_2D(beams, rowicolj, circ_rowicolj, dy_list, num_cav_hole=num_cav,
+                    num_mir_hole_L=num_mirr / 2,
+                    num_mir_hole_R=num_mirr / 2, acav=acav, amir=amir, end_period=end_period, num_end_taper=num_tap,
+                    guides=blank_guides,
+                    end_taper_L=True,
+                    end_taper_R=True, reverse_tone=reverse_tone, edge_overdose=edge_overdose, ring_overdose=ring_overdose,
+                    ring_underdose=ring_underdose, edge_underdose=ring_underdose)
+
+        outer_box = write_outer_box(beams, rowicolj, dy_list, grating_spacer=grating_spacer, round_corner=False,
+                                    direct_write_area=True, write_linker=True,
+                                    circ_grating=True, reverse_tone=reverse_tone)
+
+        if text == False:
+            self.write_outer_frame(beams, rowicolj, dy_list, outer_box, pattern_number=None, reverse_tone=reverse_tone)
+        else:
+            self.write_outer_frame(beams, rowicolj, dy_list, outer_box, pattern_number=param_sweep[0], reverse_tone=reverse_tone)
+
+        # self.god_cell.add(beams)
+        self.god_cell.add(self.BOUNDING_RECTANGLE_CELL)
+        return beams
+
+
+class PhcGroup:
+
+    """ 
+    A group of Phcs.
+
+    Phcs are written in groups to accommodate for any manufacturing errors. Not all Phcs within a group are neccesarily
+    the same as test Phcs with no beam holes are created to test light transmittance.
+
+    """
+
+class Supports:
+
+    """
+    Tabs used to cut the PhcGroup from the device layer.
+    
+    """
+
+    def __init__(self) -> None:
+        pass
+
 
 class WorkArea(Component):
 
@@ -1851,26 +1982,20 @@ class WorkArea(Component):
 
     """
 
-    POSITION_ID_CELL = gdspy.Cell("position_ids_cell")
-    POSITION_ID_CELL_LAYER = 0
-    POSITION_ID_SIDE_LENGTH = 20 * Unit.um.value
-    POSITION_ID_SCALAR = 1.2                           # EPBG Alignment Marks (previously ebpg_mark_factor)
-
-    LITHO_MARKS_CELL = gdspy.Cell("litho_marks_cell")
-    LITHO_MARKS_CELL_LAYER = 1
-    LITHO_MARKS_HIEGHT = 20 * Unit.um.value            # previously mark_len
-    LITHO_MARKS_WIDTH = 4 * Unit.um.value              # previously mark_cross
-    LITHO_MARKS_SCALAR = 1.4                           # EPBG Alignment Marks (previously ebpg_mark_factor)
-    LITHO_MARK_COUNT = 32                              # The amount of litho marks there should be for each side
-
-    @dataclass
     class PositionId:
-        name: str
-        add_orienter: bool
-        coords: set  # no need to normalize to the origin because the square in the POSITION_ID_CELL is already centered
+        
+        CELL = gdspy.Cell("position_ids_cell")
+        LAYER = 0
+        LENGTH = 20 * Unit.um.value
+        DIMENSION_SCALAR = 1.2  # EPBG Alignment Marks (previously ebpg_mark_factor) | is this half of the width/height times the scalar? TODO
+
+        def __init__(self, name: str, coords: set, add_orienter: bool) -> None:
+            self.name = name
+            self.add_orienter = add_orienter
+            self.coords = coords  # no need to normalize to the origin because the square in the POSITION_ID_CELL is already centered
 
         def get_referenced_cells(self):
-            referenced_cells = [gdspy.CellReference(WorkArea.POSITION_ID_CELL, self.coords)]
+            referenced_cells = [gdspy.CellReference(self.CELL, self.coords)]
             if self.add_orienter:
                 referenced_cells += self.get_orienters()
             return referenced_cells
@@ -1879,14 +2004,65 @@ class WorkArea(Component):
             x_sign = 1 if self.coords[0] > 0 else -1
             y_sign = 1 if self.coords[1] > 0 else -1
             return [
-                gdspy.CellReference(WorkArea.POSITION_ID_CELL, (self.coords[0], self.coords[1] + 600 * Unit.um.value * y_sign)),
-                gdspy.CellReference(WorkArea.POSITION_ID_CELL, (self.coords[0] + 600 * Unit.um.value * x_sign, self.coords[1])),
+                gdspy.CellReference(self.CELL, (self.coords[0], self.coords[1] + 600 * Unit.um.value * y_sign)),
+                gdspy.CellReference(self.CELL, (self.coords[0] + 600 * Unit.um.value * x_sign, self.coords[1])),
             ]
         
+        @classmethod
+        def create_position_id_rect(cls):
+            return cls.CELL.add(Square(side_length=cls.LENGTH, layer=cls.LAYER))
+
+        @classmethod
+        def create_position_ids(cls, manufacturing_boundary, device_writing_frame):
+            cls.create_position_id_rect()
+            position_ids = [
+                cls(name="top_right",    coords=(device_writing_frame.max_x * cls.DIMENSION_SCALAR, device_writing_frame.max_y * cls.DIMENSION_SCALAR), add_orienter=False),
+                cls(name="bottom_right", coords=(device_writing_frame.max_x * cls.DIMENSION_SCALAR, device_writing_frame.min_y * cls.DIMENSION_SCALAR), add_orienter=False),
+                cls(name="top_left",     coords=(device_writing_frame.min_x * cls.DIMENSION_SCALAR, device_writing_frame.max_y * cls.DIMENSION_SCALAR), add_orienter=False),
+                cls(name="bottom_left",  coords=(device_writing_frame.min_x * cls.DIMENSION_SCALAR, device_writing_frame.min_y * cls.DIMENSION_SCALAR), add_orienter=True),
+            ]
+            for position_id in position_ids:
+                for referenced_cell in position_id.get_referenced_cells():
+                    manufacturing_boundary = gdspy.boolean(manufacturing_boundary, referenced_cell, "not", layer=cls.LAYER)
+            return manufacturing_boundary
+
+        
     class LithoMark:
+            
+        CELL = gdspy.Cell("litho_marks_cell")
+        LAYER = 1
+        HEIGHT = 20 * Unit.um.value  # previously mark_len
+        WIDTH = 4 * Unit.um.value    # previously mark_cross
+        DIMENSION_SCALAR = 1.4       # EPBG Alignment Marks (previously ebpg_mark_factor) | is this half of the width/height times the scalar? TODO
+        SIDE_COUNT = 32              # The amount of litho marks there should be for each side
 
         def __init__(self) -> None:
             pass
+
+        @classmethod
+        def create_litho_mark_rects(cls):
+            """ Just like in create_position_id_rect, we reference the same geometry in some reference cell. """
+            cls.CELL.add(
+                [
+                    h_rect := Rectangle(width=cls.WIDTH, height=cls.HEIGHT, layer=cls.LAYER),  # purely for readability
+                    v_rect := Rectangle(width=cls.HEIGHT, height=cls.WIDTH, layer=cls.LAYER),
+                ]
+            )
+
+        @classmethod
+        def create_litho_marks(cls, manufacturing_boundary, device_writing_frame):
+            """ Technically we don't need manufacturing_boundary... TODO (previously litho_marks). """
+            cls.create_litho_mark_rects()
+            x_coords = np.linspace(device_writing_frame.min_x * cls.DIMENSION_SCALAR, device_writing_frame.max_x * cls.DIMENSION_SCALAR, num=cls.SIDE_COUNT)
+            y_coords = np.linspace(device_writing_frame.min_y * cls.DIMENSION_SCALAR, device_writing_frame.max_y * cls.DIMENSION_SCALAR, num=cls.SIDE_COUNT)
+            referenced_cells = []
+            for y_i, y_coord in enumerate(y_coords):
+                for x_i, x_coord in enumerate(x_coords):
+                    if 0 < y_i < len(y_coords) -1 and 0 < x_i < len(x_coords) -1:
+                        continue
+                    referenced_cells.append(gdspy.CellReference(cls.CELL, (x_coord, y_coord)))
+                    WorkArea.god_cell.add(referenced_cells[-1])
+            return manufacturing_boundary
 
     def __init__(self, x_length, y_length, layer, add_position_ids=True, add_litho_marks=True) -> None:
         super().__init__()
@@ -1906,64 +2082,15 @@ class WorkArea(Component):
         """ The main area the devices are written (previously: inner_frame). """
         return Rectangle(spacing * Unit.um.value * num_rows, spacing_y * Unit.um.value * num_cols * pairs, layer=self.layer)
 
-    def create_position_id_rect(self):
-        """ This is a rectangle we're going to reference for creating the position_ids. """
-        self.POSITION_ID_CELL.add(Square(side_length=self.POSITION_ID_SIDE_LENGTH, layer=self.POSITION_ID_CELL_LAYER))
-
-    def apply_position_ids(self, polygon):  # Marks defined in the Heidelberg for EBPG alignment
-        """ Marks defined in the Heidelberg for EBPG alignment (previously ebeam_marks). """
-        # we must first create the rect and add it to the POSITION_ID_CELL
-        self.create_position_id_rect()
-        position_ids = [
-            self.PositionId(name="top_right",    coords=(self.device_writing_frame.max_x * self.POSITION_ID_SCALAR, self.device_writing_frame.max_y * self.POSITION_ID_SCALAR), add_orienter=False),
-            self.PositionId(name="bottom_right", coords=(self.device_writing_frame.max_x * self.POSITION_ID_SCALAR, self.device_writing_frame.min_y * self.POSITION_ID_SCALAR), add_orienter=False),
-            self.PositionId(name="top_left",     coords=(self.device_writing_frame.min_x * self.POSITION_ID_SCALAR, self.device_writing_frame.max_y * self.POSITION_ID_SCALAR), add_orienter=False),
-            self.PositionId(name="bottom_left",  coords=(self.device_writing_frame.min_x * self.POSITION_ID_SCALAR, self.device_writing_frame.min_y * self.POSITION_ID_SCALAR), add_orienter=True),
-        ]
-        for position_id in position_ids:
-            for referenced_cell in position_id.get_referenced_cells():
-                polygon = gdspy.boolean(polygon, referenced_cell, "not", layer=self.POSITION_ID_CELL_LAYER)
-        return polygon
-
-    def create_litho_mark_rects(self):
-        """ Just like in create_position_id_rect, we reference the same geometry in some reference cell. """
-        self.LITHO_MARKS_CELL.add(
-            [
-                h_rect := Rectangle(width=self.LITHO_MARKS_WIDTH, height=self.LITHO_MARKS_HIEGHT, layer=self.LITHO_MARKS_CELL_LAYER),  # purely for readability
-                v_rect := Rectangle(width=self.LITHO_MARKS_HIEGHT, height=self.LITHO_MARKS_WIDTH, layer=self.LITHO_MARKS_CELL_LAYER),
-            ]
-        )
-
-    def apply_litho_marks(self, polygon):
-        """ (previously litho_marks). """
-        self.create_litho_mark_rects()
-        x_coords = np.linspace(self.device_writing_frame.min_x * self.LITHO_MARKS_SCALAR, self.device_writing_frame.max_x * self.LITHO_MARKS_SCALAR, num=self.LITHO_MARK_COUNT)
-        y_coords = np.linspace(self.device_writing_frame.min_y * self.LITHO_MARKS_SCALAR, self.device_writing_frame.max_y * self.LITHO_MARKS_SCALAR, num=self.LITHO_MARK_COUNT)
-        referenced_cells = []
-        for y_i, y_coord in enumerate(y_coords):
-            for x_i, x_coord in enumerate(x_coords):
-                if 0 < y_i < len(y_coords) -1 and 0 < x_i < len(x_coords) -1:
-                    continue
-                print(x_coord, y_coord)
-                referenced_cells.append(gdspy.CellReference(self.LITHO_MARKS_CELL, (x_coord, y_coord)))
-                self.god_cell.add(referenced_cells[-1])
-        return polygon
-    
     @cached_property
     def polygon(self):
         """ # The main area the devices are written (previously: frame). """
         polygon = gdspy.boolean(self.manufacturing_boundary, self.device_writing_frame, "not", layer=self.layer)
         if self.add_position_ids:
-            polygon = self.apply_position_ids(polygon)
+            polygon = self.PositionId.create_position_ids(polygon, self.device_writing_frame)
         if self.add_litho_marks:
-            polygon = self.apply_litho_marks(polygon)
+            polygon = self.LithoMark.create_litho_marks(polygon, self.device_writing_frame)
         return polygon
-    
-    @property
-    def geometries_to_add(self):
-        return [
-            self.polygon,
-        ]
 
 
 class Creator:
@@ -1974,6 +2101,8 @@ class Creator:
 
     https://gdsfactory.github.io/gdsfactory/index.html
     https://en.wikipedia.org/wiki/Avalanche_photodiode
+
+    A cell that is referenced must have the referenced geometry exist on some cell.
     """
 
     SAVE_DIR = "C:\\Users\\ericw\\playground\\gds_files"
@@ -1993,7 +2122,7 @@ class Creator:
         )
 
         self.phc = Phc(
-            beam=Beam(),
+            beam=Beam(width=60 * Unit.um.value, height= 30 * Unit.um.value),
             grating_coupler=GratingCoupler(),
         )
 
@@ -2013,15 +2142,15 @@ class Creator:
         ]
 
     def preprocess_geometries(self):
-        for component in self.all_components:
-            logger.debug(f"Adding geometry from {type(component).__name__} to god_cell")
-            component.add_geometries_to_god_cell()
+        Component.add_components_to_god_cell(self.all_components)
 
     def save_file(self, unit=UNIT, precision=PRESICION):
         self.preprocess_geometries()
         gdspy.write_gds(self.filepath, unit=unit, precision=precision)
-        if not os.path.exists(self.filepath):
-            logger.error(f"{self.filepath} does not exist after saving!")
+        if os.path.exists(self.filepath):
+            logger.info(f"{self.filepath} saved!")
+        else:
+            logger.error(f"{self.filepath} could not be saved!")
 
 
 def main():
