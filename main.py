@@ -72,13 +72,128 @@
 #         write_hole_1D_mir_sweep(cell, _tmp_beamdata, holedata, num_cav_hole, num_mir, num_mir, acav, amir, end_taper_L, end_taper_R, num_end_taper, reverse_tone=reverse_tone)
 #         _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[num_mir] / 2.0 + beam_spacing
 
+from dataclasses import dataclass, asdict
 from datetime import datetime
 from functools import cached_property
 import os
 import gdspy
-from classes.base_classes import Component
+from classes.generic import logger, Component, config_dataclass
+import numpy
 
 from classes.photonic_components import WorkArea, Unit, Hole, Beam, GratingCoupler, Phc, logger
+
+
+class PhcGenerator:
+
+    @config_dataclass
+    class HoleVariationConfig:
+        hole_width_variations             : list  # previously hx_list
+        hole_height_variations            : list  # previously hy_list
+        hole_spacing_variations           : list  # previously acav
+        hole_group_padding_variations     : list  # previously amir
+        hole_modification_func_variations : any   # previously 
+        hole_count_variations             : list  # previously mirror_list
+        hole_count_with_acav_spacing      : list  # number of holes with acav spacing (previously cavity_list)
+        taper_hole_count                  : list 
+        taper_hole_modification_func      : any 
+
+    @config_dataclass
+    class BeamVariationConfig:
+        width_variations  : list  # previously wy_list
+        height_variations : list  # previously
+
+    # @config_dataclass
+    # class TaperedHoleVariationConfig:
+    #     hole_width_variations             : list  # previously hx_list
+    #     hole_height_variations            : list  # previously hy_list
+    #     hole_spacing_variations           : list  # previously acav
+    #     hole_group_padding_variations     : list  # previously amir
+    #     hole_modification_func_variations : any   # previously 
+    #     hole_count_variations             : list  # previously mirror_list
+    #     hole_count_with_acav_spacing      : list  # number of holes with acav spacing (previously cavity_list)
+    #     taper_hole_count                  : list 
+    #     taper_hole_modification_func      : any 
+    
+    # @config_dataclass
+    # class EdgeHoleVariationConfig:
+    #     hole_width_variations             : list  # previously hx_list
+    #     hole_height_variations            : list  # previously hy_list
+    #     hole_spacing_variations           : list  # previously acav
+    #     hole_group_padding_variations     : list  # previously amir
+    #     hole_modification_func_variations : any   # previously 
+    #     hole_count_variations             : list  # previously mirror_list
+    #     hole_count_with_acav_spacing      : list  # number of holes with acav spacing (previously cavity_list)
+    #     taper_hole_count                  : list 
+    #     taper_hole_modification_func      : any 
+    
+    # @config_dataclass
+    # class MiddleHoleVariationConfig:
+    #     hole_width_variations             : list  # previously hx_list
+    #     hole_height_variations            : list  # previously hy_list
+    #     hole_spacing_variations           : list  # previously acav
+    #     hole_group_padding_variations     : list  # previously amir
+    #     hole_modification_func_variations : any   # previously 
+    #     hole_count_variations             : list  # previously mirror_list
+    #     hole_count_with_acav_spacing      : list  # number of holes with acav spacing (previously cavity_list)
+    #     taper_hole_count                  : list 
+    #     taper_hole_modification_func      : any 
+
+    variation_config_to_config_classes = {
+        HoleVariationConfig: Hole.Config,
+        BeamVariationConfig: Beam.Config,
+    }
+
+    @classmethod
+    def get_phc_configs(cls, phc_generator_hole_variation_config, phc_generator_beam_variation_config):
+
+        num_rows = 6  # Number of times to write each row of membranes
+        num_cols = 6
+
+        dev_list = numpy.arange(0, num_rows * num_cols, 1)
+
+        device_name_to_params = zip(
+            dev_list,
+            numpy.array(
+                numpy.meshgrid(
+                    *phc_generator_hole_variation_config.list_type_attrib_values \
+                        + phc_generator_beam_variation_config.list_type_attrib_values
+                )
+            ).T.reshape(
+                -1, len(phc_generator_hole_variation_config.list_type_attrib_names \
+                        + phc_generator_beam_variation_config.list_type_attrib_names)
+            ).astype(int)
+        )
+
+        def get_config_dict(variation_config, component_config_class, params):
+            data = {attrib_name: value for attrib_name, value in zip(variation_config.list_type_attrib_names, params)}
+            data = {
+                attrib_name: data[attrib_name] 
+                if attrib_name in data else 
+                getattr(variation_config, attrib_name) 
+                for attrib_name in component_config_class.attribute_names
+            }
+            return component_config_class(**data)
+
+        for device_id, params in device_name_to_params:
+            print(get_config_dict(phc_generator_hole_variation_config, Hole.Config, params[:len(phc_generator_hole_variation_config.list_type_attrib_names)]))
+            print(get_config_dict(phc_generator_beam_variation_config, Beam.Config, params[len(phc_generator_beam_variation_config.list_type_attrib_names):]))
+            # hole_config = Hole.Config
+            # print(Hole.Config(**{name: params[i] for i, name in enumerate(Hole.Config.attribute_names)}))
+            # print(Beam.Config(**{name: params[i + len(Hole.Config.attribute_names) - 1] for i, name in enumerate(Beam.Config.attribute_names)}))
+
+            # print(device_id)
+            # print(params)
+        # exit()
+
+    @classmethod
+    def create_phc_variations(cls, phc_generator_hole_variation_config, phc_generator_beam_variation_config):
+        cls.get_phc_configs(phc_generator_hole_variation_config, phc_generator_beam_variation_config)
+        return [
+            Phc(
+                beam=Beam(width=60 * Unit.um.value, height= 30 * Unit.um.value),
+                grating_coupler=GratingCoupler(),
+            )
+        ]
 
 
 class Creator:
@@ -97,22 +212,13 @@ class Creator:
     UNIT = 1.0e-9
     PRESICION = 1.0e-11
 
-    def __init__(self, name) -> None:
-
+    def __init__(self, name, work_area, phc_generator_hole_variation_config, phc_generator_beam_variation_config) -> None:
         self.name = name
-        
-        self.work_area = WorkArea(
-            x_length=6 * Unit.mm.value,
-            y_length=6 * Unit.mm.value,
-            layer=4,
-            add_position_ids=True,
-            add_litho_marks=True,
-        )
+        self.work_area = work_area
+        self.phc_generator_hole_variation_config = phc_generator_hole_variation_config
+        self.phc_generator_beam_variation_config = phc_generator_beam_variation_config
 
-        self.phc = Phc(
-            beam=Beam(width=60 * Unit.um.value, height= 30 * Unit.um.value),
-            grating_coupler=GratingCoupler(),
-        )
+        self.phc_variants = PhcGenerator.create_phc_variations(self.phc_generator_hole_variation_config, self.phc_generator_beam_variation_config)
 
     @cached_property
     def filename(self):
@@ -142,7 +248,31 @@ class Creator:
 
 
 def main():
-    creator = Creator(name="test")
+    creator = Creator(
+        name="test",
+        work_area=WorkArea(
+            x_length=6 * Unit.mm.value,
+            y_length=6 * Unit.mm.value,
+            layer=4,
+            add_position_ids=True,
+            add_litho_marks=True,
+        ),
+        phc_generator_hole_variation_config=PhcGenerator.HoleVariationConfig(
+            hole_width_variations             = [63, 66, 69, 73, 76, 79],
+            hole_height_variations            = [180, 184, 188, 192, 196, 200],
+            hole_spacing_variations           = [155.5],
+            hole_group_padding_variations     = [172.1],
+            hole_modification_func_variations = lambda x: x ** 1,
+            hole_count_variations             = [10],
+            hole_count_with_acav_spacing      = [16],
+            taper_hole_count                  = [0],
+            taper_hole_modification_func      = None,
+        ),
+        phc_generator_beam_variation_config=PhcGenerator.BeamVariationConfig(
+            width_variations             = [470],
+            height_variations            = [239048],
+        )
+    )
     creator.save_file()
 
 

@@ -1,37 +1,12 @@
-from classes.base_classes import Component, Rectangle, Square
-
+import copy
+import math
 from dataclasses import dataclass
-import enum
 from functools import cached_property
+
 import gdspy
 import numpy
-import copy
-from matplotlib.textpath import TextPath
-from matplotlib.path import Path
-import math
 
-# Define the fixed variables of the structure
-import numpy as np
-
-import logging
-import sys
-
-
-root = logging.getLogger()
-root.setLevel(logging.DEBUG)
-handler = logging.StreamHandler(sys.stdout)
-handler.setLevel(logging.DEBUG)
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-root.addHandler(handler)
-
-logger = logging.getLogger(__name__)
-
-
-class Unit(enum.Enum):
-    nm = 1
-    um = 10**3
-    mm = 10**6
+from classes.generic import logger, Unit, Component, Rectangle, Square, better_dataclass, PolygonOperations, linker_polygon, create_phc_label, pinch_pt_polygon, pinch_pt_polygon_vertical
 
 
 # General Pattern Layout
@@ -43,7 +18,6 @@ writeQFC = False
 litho_markers = True
 supportsMaskBool = False
 removeInnerMem = True
-
 
 # Define the key parameters of the membrane and support structure
 chip_size = 6000 * Unit.um.value  # The size of our chip - assumed to be 6mm x 6mm - reduce slightly in case of variations
@@ -73,7 +47,7 @@ devs = 6
 num_rows = 6# Number of times to write each row of membranes
 num_cols = 6
 
-dev_list = np.arange(0, num_rows * num_cols, 1)
+dev_list = numpy.arange(0, num_rows * num_cols, 1)
 
 # Unit for all parameters: nm
 # Parameters for exposure
@@ -111,8 +85,8 @@ mirror_list = [10]
 cavity_list = [16]
 taper_holes = [0]
 
-phc_dev_list = np.arange(0, num_rows_phc * num_cols_phc, 1)
-param_sweep = np.array(np.meshgrid(acav, amir, wy_list, mirror_list, cavity_list, hx_list, hy_list, taper_holes)).T.reshape(-1, 8).astype(int)
+phc_dev_list = numpy.arange(0, num_rows_phc * num_cols_phc, 1)
+param_sweep = numpy.array(numpy.meshgrid(acav, amir, wy_list, mirror_list, cavity_list, hx_list, hy_list, taper_holes)).T.reshape(-1, 8).astype(int)
 param_sweep = list(zip(dev_list, param_sweep))
 
 # import pprint
@@ -121,13 +95,13 @@ param_sweep = list(zip(dev_list, param_sweep))
 # exit()
 
 custom_cavity = True
-seg = np.array([1.57385141e-07, 1.58156287e-07, 1.59014195e-07, 1.59789244e-07,
+seg = numpy.array([1.57385141e-07, 1.58156287e-07, 1.59014195e-07, 1.59789244e-07,
                 1.61512865e-07, 1.63789232e-07, 1.65369591e-07, 1.67000125e-07]) * 1e9
-custom_cavity_list = np.append(np.flip(seg), seg)
+custom_cavity_list = numpy.append(numpy.flip(seg), seg)
 num_guides = 0  # Define the number of blank waveguides for control measurements (0,1,2)
 
 taper_neff = 1.8
-end_period = np.round(955 / (3.1 * 2), 1)
+end_period = numpy.round(955 / (3.1 * 2), 1)
 
 # For grating spacer
 grating_spacer = False
@@ -173,8 +147,8 @@ overlap_width = 0
 # Parameters for circular grating structure
 period = 777e-9
 duty_cycle = 0.376
-grating_linewidth = np.round(period * (1 - duty_cycle) / 1e-9, 1)
-grating_spacing = np.round(period * (duty_cycle) / 1e-9, 1)
+grating_linewidth = numpy.round(period * (1 - duty_cycle) / 1e-9, 1)
+grating_spacing = numpy.round(period * (duty_cycle) / 1e-9, 1)
 
 circ_grating_support = [200]
 num_circ_grating_points = 181
@@ -238,8 +212,8 @@ pairs = 1
 # PhC Device Parameters
 
 # QFC Device Parameters
-widths = np.linspace(0, 1, devs)
-gaps = np.linspace(0, 1, devs)
+widths = numpy.linspace(0, 1, devs)
+gaps = numpy.linspace(0, 1, devs)
 
 wg_w = 0.36
 
@@ -300,6 +274,18 @@ cell_support.add(support_4)
 
 
 class Hole:
+    
+    @better_dataclass
+    class Config:
+        hole_width_variations             : list  # previously hx_list
+        hole_height_variations            : list  # previously hy_list
+        hole_spacing_variations           : list  # previously acav
+        hole_group_padding_variations     : list  # previously amir
+        hole_modification_func_variations : any   # previously 
+        hole_count_variations             : list  # previously mirror_list
+        hole_count_with_acav_spacing      : list  # number of holes with acav spacing (previously cavity_list)
+        taper_hole_count                  : list 
+        taper_hole_modification_func      : any 
 
     """
     This is the cavity that the photons bounce around in.
@@ -315,6 +301,189 @@ class Beam(Rectangle):
     Note:    
         This is a 1 dimmensional beam. There can be more in the future. TODO
     """
+
+    @better_dataclass
+    class Config:
+        width_variations  : float  # previously wy_list
+        height_variations : float  # previously 
+
+    @staticmethod
+    def write_beam_single(cell, pltdata, layer=1):
+        cell.add(gdspy.Polygon([
+            (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0),
+            (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos + pltdata.dy / 2.0),
+            (pltdata.xpos + pltdata.dx / 2.0, pltdata.ypos + pltdata.dy / 2.0),
+            (pltdata.xpos + pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0),
+            (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0)
+        ], layer=layer))
+
+    @classmethod
+    def exponential_cavity_period_list(cls, amir, acav, num_cav, exponent):
+        N = int(num_cav / 2)
+        cavity_period_list = numpy.zeros(N)
+        a = (amir - acav) / ((N - 1) ** exponent)
+        b = acav
+
+        for i in range(N):
+            cavity_period_list[i] = a * (i ** exponent) + b
+
+        cavity_period_list = numpy.append(numpy.flipud(cavity_period_list), cavity_period_list)
+        return cavity_period_list
+
+    @staticmethod
+    def get_tapers(num_end_taper, end_period, amir):
+        taper_period_list = numpy.linspace(amir, end_period, num_end_taper + 1)
+        return taper_period_list[1:]
+
+    @staticmethod
+    def write_hole_single(cell, pltdata, layer=2):
+        _philist = numpy.linspace(0, 2 * numpy.pi, num_circ_points)
+        _circ_pts = [
+            ((round(pltdata.xpos / shot_pitch) + round(pltdata.dx / 2 * numpy.cos(phi) / shot_pitch)) * shot_pitch,
+            (round(pltdata.ypos / shot_pitch) + round(pltdata.dy / 2 * numpy.sin(phi) / shot_pitch)) * shot_pitch)
+            for phi in _philist
+        ]
+        return gdspy.Polygon(_circ_pts, layer=layer)
+
+    @classmethod
+    def write_hole_1D(cls, cell, beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, amir, end_period,
+                    end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, layer=2):
+        n = 1.5  # Exponent for polynomial
+
+        _one_side_holes = (num_cav_hole - 1) / 2.0
+        _idx_list = numpy.linspace(-_one_side_holes, _one_side_holes, int(num_cav_hole))
+        X1 = _idx_list[int(num_cav_hole / 2)]  # First Hole
+        XN = _idx_list[-1]  # Last Hole
+
+        _acav_list = cls.exponential_cavity_period_list(amir, acav, num_cav_hole, exponent=2)
+
+        if custom_cavity == True:
+            _acav_list = custom_cavity_list
+
+        if end_taper_L == True:
+            taper_periods = cls.get_tapers(num_end_taper, end_period, amir=amir)
+
+        _amir_list_L = numpy.append(numpy.flipud(taper_periods), [amir] * int(num_mir_hole_L))
+
+        _amir_list_R = [amir] * int(num_mir_hole_R)
+        _amir_list_R.extend(taper_periods)
+        _aper_list = list(copy.copy(_amir_list_L))
+
+        _aper_list.extend(_acav_list)
+        _aper_list.extend(_amir_list_R)
+
+        _hole_write = copy.copy(holedata)
+        _hole_write.xpos = _hole_write.xpos - numpy.sum(numpy.array(_acav_list)) / 2.0 - numpy.sum(
+            numpy.array(_amir_list_L))
+        _taper_scale_list = []
+        if num_end_taper > 0:
+            _taper_scale_list = numpy.linspace(0, 1.0, num_end_taper + 2)
+            _taper_scale_list_L = _taper_scale_list[1:-1]
+            _taper_scale_list_R = numpy.flipud(_taper_scale_list[1:-1])
+
+        for i in range(len(_aper_list)):
+            _hole_write.xpos = _hole_write.xpos + _aper_list[i] / 2.0
+            if i < num_end_taper * end_taper_L:
+                _hole_write.dx = holedata.dx * 1
+                _hole_write.dy = holedata.dy * 1
+            else:
+                _hole_write.dx = holedata.dx
+                _hole_write.dy = holedata.dy
+            if i >= (len(_aper_list) - num_end_taper * end_taper_R):
+                _hole_write.dx = holedata.dx * 1
+                _hole_write.dy = holedata.dy * 1
+            _single_hole_polygon = cls.write_hole_single(cell, _hole_write)
+
+            if i == 0:
+                _hole_polygon_combined = _single_hole_polygon
+            else:
+                _hole_polygon_combined = gdspy.fast_boolean(_hole_polygon_combined, _single_hole_polygon, 'or', max_points=0, layer=layer)
+            _hole_write.xpos = _hole_write.xpos + _aper_list[i] / 2.0
+
+        if reverse_tone:
+            _tmp_beam_polygon = gdspy.Polygon(
+                [
+                    (beamdata.xpos - beamdata.dx / 2.0, beamdata.ypos - beamdata.dy / 2.0),
+                    (beamdata.xpos - beamdata.dx / 2.0, beamdata.ypos + beamdata.dy / 2.0),
+                    (beamdata.xpos + beamdata.dx / 2.0, beamdata.ypos + beamdata.dy / 2.0),
+                    (beamdata.xpos + beamdata.dx / 2.0, beamdata.ypos - beamdata.dy / 2.0),
+                    (beamdata.xpos - beamdata.dx / 2.0, beamdata.ypos - beamdata.dy / 2.0)
+                ],
+                layer=layer
+            )
+            _tmp_beam_polygon = gdspy.fast_boolean(_tmp_beam_polygon, _hole_polygon_combined, 'not', max_points=0, layer=layer)
+            send = _tmp_beam_polygon
+        else:
+            send = _hole_polygon_combined
+        return send
+
+    @classmethod
+    def write_multiple_hole(cls, cell, beamdata, holedata, beam_dy_list, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, amir,
+                    end_period, guides,
+                    end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, edge_overdose=False,
+                    ring_overdose=False,
+                    ring_underdose=True, edge_underdose=True):
+        """ (previously write_hole_2D). """
+
+        _initial_ypos = holedata.ypos - beam_dy_list[0] / 2.0
+        _tmp_beamdata = copy.copy(beamdata)
+        _tmp_beamdata.ypos = _tmp_beamdata.ypos - beam_dy_list[0] / 2.0
+
+        for i in range(num_beam):
+            holedata.ypos = _initial_ypos + i * beam_spacing + numpy.sum(beam_dy_list[:i]) + beam_dy_list[i] / 2.0
+            _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0
+            _tmp_beamdata.dy = beam_dy_list[i]
+
+            if guides == 1 and i == 0:
+                cls.write_beam_single(cell, _tmp_beamdata, layer=2)
+            elif guides == 2 and (i == 0 or i == (num_beam-1)):
+                cls.write_beam_single(cell, _tmp_beamdata, layer=2)
+            else:
+                ord_holes = cls.write_hole_1D(
+                    cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, 
+                    amir, end_period, end_taper_L, end_taper_R, num_end_taper, reverse_tone=reverse_tone
+                )
+                if ring_overdose or edge_overdose is True:
+                    if reverse_tone == True:
+                        holedata.dx = holedata.dx + over_ring_size * ring_overdose * 2
+                        holedata.dy = holedata.dy + over_ring_size * ring_overdose * 2
+                        _tmp_beamdata.dy = _tmp_beamdata.dy - over_edge_size * 2 * edge_overdose
+                        overdose_holes = cls.write_hole_1D(
+                            cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, 
+                            amir, end_period, end_taper_L, end_taper_R, num_end_taper, reverse_tone=reverse_tone
+                        )
+                        region = gdspy.fast_boolean(ord_holes, overdose_holes, 'not', max_points=0, layer=11)
+                        cell.add(region)
+                        cell.add(overdose_holes)
+                        holedata.dx = holedata.dx - over_ring_size * ring_overdose * 2
+                        holedata.dy = holedata.dy - over_ring_size * ring_overdose * 2
+                elif ring_underdose or edge_underdose is True:
+                    if reverse_tone is False:
+                        ref_ord_edge = cls.write_hole_1D(
+                            cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, 
+                            amir, end_period, end_taper_L, end_taper_R, num_end_taper, reverse_tone=True
+                        )
+                        holedata.dx = holedata.dx - under_ring_size * ring_underdose
+                        holedata.dy = holedata.dy - under_ring_size * ring_underdose
+                        _tmp_beamdata.dy = _tmp_beamdata.dy + under_edge_size * 2 * edge_underdose
+                        underdose_holes = cls.write_hole_1D(
+                            cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, 
+                            amir, end_period, end_taper_L, end_taper_R, num_end_taper, reverse_tone=reverse_tone
+                        )
+                        _tmp_beamdata.dx = _tmp_beamdata.dx - spacer * 2
+                        underdose_edge = cls.write_hole_1D(
+                            cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav,
+                            amir, end_period, end_taper_L, end_taper_R, num_end_taper, reverse_tone=True
+                        )
+                        region = gdspy.fast_boolean(ord_holes, underdose_holes, 'not', max_points=0, layer=12)
+                        region2 = gdspy.fast_boolean(underdose_edge, ref_ord_edge, 'not', max_points=0, layer=12)
+                        # underdose_holes = gdspy.fast_boolean(underdose_edge, region2, 'not', max_points=0, layer=12)
+                        cell.add(underdose_holes)
+                        cell.add(region)
+                        cell.add(region2)
+                else:
+                    cell.add(ord_holes)
+            _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0 + beam_spacing
 
 
 class GratingCoupler:
@@ -377,428 +546,7 @@ class Phc(Component):
         )
         self.bounding_box_cell.add(rect)
         return rect
-    
-    def linker_polygon(self, pltdata, layer=3):
-        return gdspy.Polygon(
-            [
-                (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0),
-                (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos + pltdata.dy / 2.0),
-                (pltdata.xpos + pltdata.dx / 2.0, pltdata.ypos + pltdata.dy / 2.0),
-                (pltdata.xpos + pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0),
-                (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0)
-            ], 
-            layer=layer
-        )
         
-    def pinch_pt_polygon(self, beam_dy, pinch_pt_size, pinch_pt_xloc, pinch_pt_yloc, layer=5):
-        _upper_triangle = gdspy.Polygon(
-            [
-                (pinch_pt_xloc, pinch_pt_yloc + pinch_pt_size / 2.0),
-                (pinch_pt_xloc - (beam_dy - pinch_pt_size) * math.sqrt(3) / 2.0, pinch_pt_yloc + beam_dy / 2.0),
-                (pinch_pt_xloc + (beam_dy - pinch_pt_size) * math.sqrt(3) / 2.0, pinch_pt_yloc + beam_dy / 2.0),
-                (pinch_pt_xloc, pinch_pt_yloc + pinch_pt_size / 2.0)
-            ],
-            layer=layer
-        )
-        _lower_triangle = gdspy.Polygon(
-            [
-                (pinch_pt_xloc, pinch_pt_yloc - pinch_pt_size / 2.0),
-                (pinch_pt_xloc - (beam_dy - pinch_pt_size) * math.sqrt(3) / 2.0, pinch_pt_yloc - beam_dy / 2.0),
-                (pinch_pt_xloc + (beam_dy - pinch_pt_size) * math.sqrt(3) / 2.0, pinch_pt_yloc - beam_dy / 2.0),
-                (pinch_pt_xloc, pinch_pt_yloc - pinch_pt_size / 2.0)
-            ],
-            layer=layer
-        )
-        return _upper_triangle, _lower_triangle
-
-    def pinch_pt_polygon_vertical(self, beam_dy, pinch_pt_size, pinch_pt_xloc, pinch_pt_yloc, layer=3):
-        _left_triangle = gdspy.Polygon(
-            [
-                (pinch_pt_xloc - pinch_pt_size / 2.0, pinch_pt_yloc),
-                (pinch_pt_xloc - beam_dy / 2.0, pinch_pt_yloc - (beam_dy - pinch_pt_size) * math.sqrt(3) / 2.0),
-                (pinch_pt_xloc - beam_dy / 2.0, pinch_pt_yloc + (beam_dy - pinch_pt_size) * math.sqrt(3) / 2.0),
-                (pinch_pt_xloc - pinch_pt_size / 2.0, pinch_pt_yloc)
-            ], 
-            layer=layer
-        )
-        _right_triangle = gdspy.Polygon(
-            [
-                (pinch_pt_xloc + pinch_pt_size / 2.0, pinch_pt_yloc),
-                (pinch_pt_xloc + beam_dy / 2.0, pinch_pt_yloc - (beam_dy - pinch_pt_size) * math.sqrt(3) / 2.0),
-                (pinch_pt_xloc + beam_dy / 2.0, pinch_pt_yloc + (beam_dy - pinch_pt_size) * math.sqrt(3) / 2.0),
-                (pinch_pt_xloc + pinch_pt_size / 2.0, pinch_pt_yloc)
-            ], 
-            layer=layer
-        )
-        return _left_triangle, _right_triangle
-
-    def write_support_region(self, innerframe, layer=3):
-
-        _support_box_outer = copy.copy(innerframe)
-        _ymin = _support_box_outer.ypos - _support_box_outer.dy / 2.0
-        _ymax = _support_box_outer.ypos + _support_box_outer.dy / 2.0
-        _xmin = _support_box_outer.xpos - _support_box_outer.dx / 2.0
-        _xmax = _support_box_outer.xpos + _support_box_outer.dx / 2.0
-        _tmp_support_outer = self.linker_polygon(_support_box_outer, layer)
-
-        _support_box_inner = copy.copy(_support_box_outer)
-        _support_box_inner.dx = _support_box_inner.dx - 2 * overlap_width
-        _support_box_inner.dy = _support_box_inner.dy - 2 * overlap_width
-        _tmp_support_inner = self.linker_polygon(_support_box_inner, layer)
-
-        _write_field = copy.copy(_support_box_outer)
-        _write_field.dx = write_field_x_size
-        _write_field.dy = write_field_y_size
-        _tmp_write_field = self.linker_polygon(_write_field, layer)
-
-        _support_outline = copy.copy(_support_box_outer)
-        _support_outline.dx = _support_outline.dx + 2 * support_connector_width
-        _support_outline.dy = _support_outline.dy + 2 * support_connector_width
-        _tmp_support_outline = self.linker_polygon(_support_outline, layer)
-
-        _box_write_area = gdspy.fast_boolean(_tmp_support_outer, _tmp_support_inner, 'not', max_points=0, layer=layer)
-
-        _tmp_notch_yarray = (_support_box_outer.dy - corner_bend_rad * 2 - support_beam_size) * numpy.linspace(0, 1.0, num=num_ysupport)
-        for i in range(num_ysupport):
-            _tmp_notch_ypos = _ymin * 1.15 + corner_bend_rad + support_beam_size / 2.0 + _tmp_notch_yarray[i]
-            _tmp_beam_polygon_L = gdspy.Polygon(
-                [
-                    (_xmin - support_connector_width, _tmp_notch_ypos - support_beam_size / 2.0),
-                    (_xmin - support_connector_width, _tmp_notch_ypos + support_beam_size / 2.0),
-                    (_xmin, _tmp_notch_ypos + support_beam_size / 2.0),
-                    (_xmin, _tmp_notch_ypos - support_beam_size / 2.0),
-                    (_xmin - support_connector_width, _tmp_notch_ypos - support_beam_size / 2.0)
-                ], 
-                layer=layer
-            )
-            _tmp_upper_triangle, _tmp_lower_triangle = self.pinch_pt_polygon(
-                support_beam_size, support_notch_size,
-                _xmin - support_connector_width / 2.0,
-                _tmp_notch_ypos, layer
-            )
-            _tmp_beam_polygon_L = gdspy.fast_boolean(_tmp_beam_polygon_L, _tmp_upper_triangle, 'not', max_points=0, layer=layer)
-            _tmp_beam_polygon_L = gdspy.fast_boolean(_tmp_beam_polygon_L, _tmp_lower_triangle, 'not', max_points=0, layer=layer)
-
-            _tmp_beam_polygon_R = gdspy.Polygon(
-                [
-                    (_xmax, _tmp_notch_ypos - support_beam_size / 2.0),
-                    (_xmax, _tmp_notch_ypos + support_beam_size / 2.0),
-                    (_xmax + support_connector_width, _tmp_notch_ypos + support_beam_size / 2.0),
-                    (_xmax + support_connector_width, _tmp_notch_ypos - support_beam_size / 2.0),
-                    (_xmax, _tmp_notch_ypos - support_beam_size / 2.0)
-                ], 
-                layer=layer
-            )
-            _tmp_upper_triangle, _tmp_lower_triangle = self.pinch_pt_polygon(
-                support_beam_size, support_notch_size,
-                _xmax + support_connector_width / 2.0,
-                _tmp_notch_ypos, layer
-            )
-            _tmp_beam_polygon_R = gdspy.fast_boolean(_tmp_beam_polygon_R, _tmp_upper_triangle, 'not', max_points=0, layer=layer)
-            _tmp_beam_polygon_R = gdspy.fast_boolean(_tmp_beam_polygon_R, _tmp_lower_triangle, 'not', max_points=0, layer=layer)
-
-            _box_write_area = gdspy.fast_boolean(_box_write_area, _tmp_beam_polygon_L, 'or', max_points=0, layer=layer)
-            _box_write_area = gdspy.fast_boolean(_box_write_area, _tmp_beam_polygon_R, 'or', max_points=0, layer=layer)
-
-        _tmp_notch_xarray = (_support_box_outer.dx - corner_bend_rad * 2 - support_beam_size) * numpy.linspace(0, 1.0, num=num_xsupport)
-        for i in range(num_xsupport):
-            _tmp_notch_xpos = _xmin + corner_bend_rad + support_beam_size / 2.0 + _tmp_notch_xarray[i]
-            _tmp_beam_polygon_T = gdspy.Polygon(
-                [
-                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymax),
-                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymax + support_connector_width),
-                    (_tmp_notch_xpos + support_beam_size / 2.0, _ymax + support_connector_width),
-                    (_tmp_notch_xpos + support_beam_size / 2.0, _ymax),
-                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymax)
-                ],
-                layer=layer
-            )
-            _tmp_left_triangle, _tmp_right_triangle = self.pinch_pt_polygon_vertical(
-                support_beam_size, support_notch_size,
-                _tmp_notch_xpos,
-                _ymax + support_connector_width / 2.0,
-                layer
-            )
-            _tmp_beam_polygon_T = gdspy.fast_boolean(_tmp_beam_polygon_T, _tmp_left_triangle, 'not', max_points=0, layer=layer)
-            _tmp_beam_polygon_T = gdspy.fast_boolean(_tmp_beam_polygon_T, _tmp_right_triangle, 'not', max_points=0, layer=layer)
-
-            _tmp_beam_polygon_B = gdspy.Polygon(
-                [
-                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymin - support_connector_width),
-                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymin),
-                    (_tmp_notch_xpos + support_beam_size / 2.0, _ymin),
-                    (_tmp_notch_xpos + support_beam_size / 2.0, _ymin - support_connector_width),
-                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymin - support_connector_width)
-                ],
-                layer=layer
-            )
-            _tmp_left_triangle, _tmp_right_triangle = self.pinch_pt_polygon_vertical(
-                support_beam_size, support_notch_size,
-                _tmp_notch_xpos,
-                _ymin - support_connector_width / 2.0,
-                layer
-            )
-            _tmp_beam_polygon_B = gdspy.fast_boolean(_tmp_beam_polygon_B, _tmp_left_triangle, 'not', max_points=0, layer=layer)
-            _tmp_beam_polygon_B = gdspy.fast_boolean(_tmp_beam_polygon_B, _tmp_right_triangle, 'not', max_points=0, layer=layer)
-
-            _box_write_area = gdspy.fast_boolean(_box_write_area, _tmp_beam_polygon_T, 'or', max_points=0, layer=layer)
-            _box_write_area = gdspy.fast_boolean(_box_write_area, _tmp_beam_polygon_B, 'or', max_points=0, layer=layer)
-
-        _support_combined = gdspy.fast_boolean(_tmp_write_field, _tmp_support_outline, 'not', max_points=0, layer=layer)
-        _support_combined = gdspy.fast_boolean(_support_combined, _box_write_area, 'or', max_points=0, layer=layer)
-
-        return _support_combined
-
-    def create_polygons_from_str(self, some_str, size, position, font_prop=None, tolerance=0.1):
-        polys = []
-        xmax = position[0]
-        c = None
-        for points, code in TextPath(position, some_str, size=float(size), prop=font_prop).iter_segments():
-            if code == Path.MOVETO:
-                c = gdspy.Curve(*points, tolerance=tolerance)
-            if c is None:
-                continue
-            if code == Path.LINETO:
-                c.L(*points)
-            elif code == Path.CURVE3:
-                c.Q(*points)
-            elif code == Path.CURVE4:
-                c.C(*points)
-            elif code == Path.CLOSEPOLY:
-                if (poly := c.get_points()).size <= 0:
-                    continue
-                if poly[:, 0].min() < xmax:
-                    for i in range(len(polys) - 1, -1, -1):
-                        if gdspy.inside(poly[:1], [polys[i]], precision=0.1 * tolerance)[0]:
-                            poly = gdspy.boolean([polys.pop(i)], [poly], "xor", precision=0.1 * tolerance, max_points=0).polygons[0]
-                            break
-                        elif gdspy.inside(polys[i][:1], [poly], precision=0.1 * tolerance)[0]:
-                            poly = gdspy.boolean([polys.pop(i)], [poly], "xor", precision=0.1 * tolerance, max_points=0).polygons[0]
-                xmax = max(xmax, poly[:, 0].max())
-                polys.append(poly)
-        return polys
-
-    def create_phc_label(self, pattern_number, size, position, font_prop=None, tolerance=0.1):
-        return self.create_polygons_from_str(f"+{pattern_number}", size, position, font_prop, tolerance)
-
-    def write_outer_frame(self, cell, beamdata, beam_dy_list, outer_box, pattern_number=None, reverse_tone=False, layer=3):
-
-        _ymin = beamdata.ypos - beam_dy_list[0] / 2.0 - edge_offset
-        _ymax = _ymin + (num_beam - 1) * beam_spacing + numpy.sum(beam_dy_list) + edge_offset * 2
-        _tmp_beamdata = copy.copy(beamdata)
-        _support_inner = self.PLTdata(xpos=_tmp_beamdata.xpos, ypos=(_ymin + _ymax) / 2.0, dx=beamdata.dx + 2 * linker_width + 2 * linker_edgeoffset, dy=_ymax - _ymin)
-
-        _frame_write_area = self.write_support_region(_support_inner, layer)
-
-        if pattern_number is not None:
-            _pattern_number_to_write = self.create_phc_label(pattern_number, textheight, (_support_inner.xpos-8e3, _support_inner.ypos + _support_inner.dy / 2.0 + 2.5e3))
-            # create_phc_label(pattern_number, size=textheight, position=(xloc, yloc), font_prop=None, tolerance=0.1):
-            _frame_write_area = gdspy.fast_boolean(_frame_write_area, _pattern_number_to_write, 'not', max_points=0, layer=layer)
-
-        if not reverse_tone:
-            bounds = _frame_write_area.get_bounding_box()
-
-            shift = 5000
-
-            box = gdspy.Rectangle(np.array(bounds[0]) - shift, np.array(bounds[1]) + shift, layer=layer)
-            bounds_inner = outer_box.get_bounding_box()
-            box_inner = gdspy.Rectangle(bounds_inner[0], bounds_inner[1], layer=layer)
-            box_inner = box_inner.fillet(corner_bend_rad, points_per_2pi=corner_bend_pts)
-
-            _box_write_area_reverse = gdspy.fast_boolean(box, _frame_write_area, 'not', max_points=0, layer=layer)
-            _box_write_area_reverse = gdspy.fast_boolean(_box_write_area_reverse, box_inner, 'not', max_points=0, layer=layer)
-            cell.add(_box_write_area_reverse)
-        else:
-            cell.add(_frame_write_area)
-
-    def write_beam_single(self, cell, pltdata, layer=1):
-        cell.add(gdspy.Polygon([
-            (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0),
-            (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos + pltdata.dy / 2.0),
-            (pltdata.xpos + pltdata.dx / 2.0, pltdata.ypos + pltdata.dy / 2.0),
-            (pltdata.xpos + pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0),
-            (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0)
-        ], layer=layer))
-
-    def exponential_cavity_period_list(self, amir, acav, num_cav, exponent):
-        N = int(num_cav / 2)
-        cavity_period_list = np.zeros(N)
-        a = (amir - acav) / ((N - 1) ** exponent)
-        b = acav
-
-        for i in range(N):
-            cavity_period_list[i] = a * (i ** exponent) + b
-
-        cavity_period_list = np.append(np.flipud(cavity_period_list), cavity_period_list)
-        return cavity_period_list
-
-    def get_tapers(self, num_end_taper, end_period, amir):
-        taper_period_list = np.linspace(amir, end_period, num_end_taper + 1)
-        return taper_period_list[1:]
-
-    def write_hole_single(self, cell, pltdata, layer=2):
-
-        _philist = numpy.linspace(0, 2 * numpy.pi, num_circ_points)
-
-        _circ_pts = [((round(pltdata.xpos / shot_pitch) + round(pltdata.dx / 2 * numpy.cos(phi) / shot_pitch)) * shot_pitch,
-                    (round(pltdata.ypos / shot_pitch) + round(pltdata.dy / 2 * numpy.sin(phi) / shot_pitch)) * shot_pitch)
-                    for phi in _philist]
-
-        return gdspy.Polygon(_circ_pts, layer=layer)
-
-    def write_hole_1D(self, cell, beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, amir, end_period,
-                    end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, layer=2):
-        n = 1.5  # Exponent for polynomial
-
-        _one_side_holes = (num_cav_hole - 1) / 2.0
-        _idx_list = numpy.linspace(-_one_side_holes, _one_side_holes, int(num_cav_hole))
-        X1 = _idx_list[int(num_cav_hole / 2)]  # First Hole
-        XN = _idx_list[-1]  # Last Hole
-
-        _acav_list = self.exponential_cavity_period_list(amir, acav, num_cav_hole, exponent=2)
-
-        if custom_cavity == True:
-            _acav_list = custom_cavity_list
-
-        if end_taper_L == True:
-            taper_periods = self.get_tapers(num_end_taper, end_period, amir=amir)
-
-        _amir_list_L = np.append(np.flipud(taper_periods), [amir for x in range(int(num_mir_hole_L))])
-
-        _amir_list_R = [amir for x in range(int(num_mir_hole_R))]
-        _amir_list_R.extend(taper_periods)
-        _aper_list = list(copy.copy(_amir_list_L))
-
-        _aper_list.extend(_acav_list)
-        _aper_list.extend(_amir_list_R)
-
-        _hole_write = copy.copy(holedata)
-        _hole_write.xpos = _hole_write.xpos - numpy.sum(numpy.array(_acav_list)) / 2.0 - numpy.sum(
-            numpy.array(_amir_list_L))
-        _taper_scale_list = []
-        if num_end_taper > 0:
-            _taper_scale_list = numpy.linspace(0, 1.0, num_end_taper + 2)
-            _taper_scale_list_L = _taper_scale_list[1:-1]
-            _taper_scale_list_R = numpy.flipud(_taper_scale_list[1:-1])
-
-        for i in range(len(_aper_list)):
-            _hole_write.xpos = _hole_write.xpos + _aper_list[i] / 2.0
-            if i < num_end_taper * end_taper_L:
-                _hole_write.dx = holedata.dx * 1
-                _hole_write.dy = holedata.dy * 1
-            else:
-                _hole_write.dx = holedata.dx
-                _hole_write.dy = holedata.dy
-            if i >= (len(_aper_list) - num_end_taper * end_taper_R):
-                _hole_write.dx = holedata.dx * 1
-                _hole_write.dy = holedata.dy * 1
-            _single_hole_polygon = self.write_hole_single(cell, _hole_write)
-
-            if i == 0:
-                _hole_polygon_combined = _single_hole_polygon
-            else:
-                _hole_polygon_combined = gdspy.fast_boolean(_hole_polygon_combined, _single_hole_polygon, 'or',
-                                                            max_points=0, layer=layer)
-
-            _hole_write.xpos = _hole_write.xpos + _aper_list[i] / 2.0
-
-        if reverse_tone is True:
-            _tmp_beam_polygon = gdspy.Polygon([
-                (beamdata.xpos - beamdata.dx / 2.0, beamdata.ypos - beamdata.dy / 2.0),
-                (beamdata.xpos - beamdata.dx / 2.0, beamdata.ypos + beamdata.dy / 2.0),
-                (beamdata.xpos + beamdata.dx / 2.0, beamdata.ypos + beamdata.dy / 2.0),
-                (beamdata.xpos + beamdata.dx / 2.0, beamdata.ypos - beamdata.dy / 2.0),
-                (beamdata.xpos - beamdata.dx / 2.0, beamdata.ypos - beamdata.dy / 2.0)
-            ], layer=layer)
-            _tmp_beam_polygon = gdspy.fast_boolean(_tmp_beam_polygon, _hole_polygon_combined, 'not', max_points=0,
-                                                layer=layer)
-            send = _tmp_beam_polygon
-        else:
-            send = _hole_polygon_combined
-
-        return send
-
-    def write_hole_2D(self, cell, beamdata, holedata, beam_dy_list, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, amir,
-                    end_period, guides,
-                    end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, edge_overdose=False,
-                    ring_overdose=False,
-                    ring_underdose=True, edge_underdose=True):
-
-        _initial_ypos = holedata.ypos - beam_dy_list[0] / 2.0
-        _tmp_beamdata = copy.copy(beamdata)
-        _tmp_beamdata.ypos = _tmp_beamdata.ypos - beam_dy_list[0] / 2.0
-
-        for i in range(num_beam):
-            holedata.ypos = _initial_ypos + i * beam_spacing + numpy.sum(beam_dy_list[:i]) + beam_dy_list[i] / 2.0
-            _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0
-            _tmp_beamdata.dy = beam_dy_list[i]
-
-
-            if guides == 1 and i == 0:
-                self.write_beam_single(cell, _tmp_beamdata, layer=2)
-            elif guides == 2 and (i == 0 or i == (num_beam-1)):
-                self.write_beam_single(cell, _tmp_beamdata, layer=2)
-            else:
-
-                ord_holes = self.write_hole_1D(cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav,
-                                        amir,
-                                        end_period,
-                                        end_taper_L, end_taper_R, num_end_taper, reverse_tone=reverse_tone)
-
-                if ring_overdose or edge_overdose is True:
-                    if reverse_tone == True:
-                        holedata.dx = holedata.dx + over_ring_size * ring_overdose * 2
-                        holedata.dy = holedata.dy + over_ring_size * ring_overdose * 2
-
-                        _tmp_beamdata.dy = _tmp_beamdata.dy - over_edge_size * 2 * edge_overdose
-
-                        overdose_holes = self.write_hole_1D(cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L,
-                                                    num_mir_hole_R, acav, amir,
-                                                    end_period,
-                                                    end_taper_L, end_taper_R, num_end_taper, reverse_tone=reverse_tone)
-
-                        region = gdspy.fast_boolean(ord_holes, overdose_holes, 'not', max_points=0, layer=11)
-                        cell.add(region)
-                        cell.add(overdose_holes)
-
-                        holedata.dx = holedata.dx - over_ring_size * ring_overdose * 2
-                        holedata.dy = holedata.dy - over_ring_size * ring_overdose * 2
-
-                elif ring_underdose or edge_underdose is True:
-                    if reverse_tone is False:
-                        ref_ord_edge = self.write_hole_1D(cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L,
-                                                    num_mir_hole_R, acav, amir,
-                                                    end_period,
-                                                    end_taper_L, end_taper_R, num_end_taper, reverse_tone=True)
-
-                        holedata.dx = holedata.dx - under_ring_size * ring_underdose
-                        holedata.dy = holedata.dy - under_ring_size * ring_underdose
-                        _tmp_beamdata.dy = _tmp_beamdata.dy + under_edge_size * 2 * edge_underdose
-
-                        underdose_holes = self.write_hole_1D(cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L,
-                                                        num_mir_hole_R, acav, amir,
-                                                        end_period,
-                                                        end_taper_L, end_taper_R, num_end_taper, reverse_tone=reverse_tone)
-
-                        _tmp_beamdata.dx = _tmp_beamdata.dx - spacer * 2
-                        underdose_edge = self.write_hole_1D(cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L,
-                                                    num_mir_hole_R, acav, amir,
-                                                    end_period,
-                                                    end_taper_L, end_taper_R, num_end_taper, reverse_tone=True)
-
-                        region = gdspy.fast_boolean(ord_holes, underdose_holes, 'not', max_points=0, layer=12)
-                        region2 = gdspy.fast_boolean(underdose_edge, ref_ord_edge, 'not', max_points=0, layer=12)
-
-                        # underdose_holes = gdspy.fast_boolean(underdose_edge, region2, 'not', max_points=0, layer=12)
-
-                        cell.add(underdose_holes)
-                        cell.add(region)
-                        cell.add(region2)
-                else:
-                    cell.add(ord_holes)
-
-            _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0 + beam_spacing
-
     def write_right_circ_grating(self, beamdata, layer=5):
 
         _philist_R = numpy.linspace(-1 * numpy.pi / 2.0, numpy.pi / 2.0, num_circ_grating_points - 1)
@@ -840,41 +588,40 @@ class Phc(Component):
                 _support_pt_combined.extend(_support_pt)
                 _support_pt_combined.extend(_ini_pt)
                 _support_frame = gdspy.Polygon(_support_pt_combined, layer=layer)
-                _right_grating_tmp = gdspy.fast_boolean(_right_grating_tmp, _support_frame, 'not', max_points=0,
-                                                        layer=layer)
+                _right_grating_tmp = gdspy.fast_boolean(_right_grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
 
-                _philist_support = numpy.linspace(numpy.pi / 2.0 - odd_support_angle - support_angle_width / 2.0,
-                                                numpy.pi / 2.0 - odd_support_angle + support_angle_width / 2.0,
-                                                num_circ_grating_points - 1)
+                _philist_support = numpy.linspace(
+                    numpy.pi / 2.0 - odd_support_angle - support_angle_width / 2.0,
+                    numpy.pi / 2.0 - odd_support_angle + support_angle_width / 2.0,
+                    num_circ_grating_points - 1
+                )
                 _support_pt = [
-                    ((round((_tmp_beamdata.xpos + _tmp_beamdata.dx / 2) / shot_pitch) + round(
-                        _radius_outer * numpy.cos(phi) / shot_pitch)) * shot_pitch,
-                    (round(_tmp_beamdata.ypos / shot_pitch) + round(
-                        _radius_outer * numpy.sin(phi) / shot_pitch)) * shot_pitch) \
-                    for phi in _philist_support]
+                    ((round((_tmp_beamdata.xpos + _tmp_beamdata.dx / 2) / shot_pitch) + round(_radius_outer * numpy.cos(phi) / shot_pitch)) * shot_pitch,
+                    (round(_tmp_beamdata.ypos / shot_pitch) + round(_radius_outer * numpy.sin(phi) / shot_pitch)) * shot_pitch)
+                    for phi in _philist_support
+                ]
                 _support_pt_combined = copy.copy(_ini_pt)
                 _support_pt_combined.extend(_support_pt)
                 _support_pt_combined.extend(_ini_pt)
                 _support_frame = gdspy.Polygon(_support_pt_combined, layer=layer)
-                _right_grating_tmp = gdspy.fast_boolean(_right_grating_tmp, _support_frame, 'not', max_points=0,
-                                                        layer=layer)
+                _right_grating_tmp = gdspy.fast_boolean(_right_grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
             else:
                 _radius_outer = _radius_outer + 10
-                _philist_support = numpy.linspace(-1 * numpy.pi / 2.0 + even_support_angle - support_angle_width / 2.0,
-                                                -1 * numpy.pi / 2.0 + even_support_angle + support_angle_width / 2.0,
-                                                num_circ_grating_points - 1)
+                _philist_support = numpy.linspace(
+                    -1 * numpy.pi / 2.0 + even_support_angle - support_angle_width / 2.0,
+                    -1 * numpy.pi / 2.0 + even_support_angle + support_angle_width / 2.0,
+                    num_circ_grating_points - 1
+                )
                 _support_pt = [
-                    ((round((_tmp_beamdata.xpos + _tmp_beamdata.dx / 2) / shot_pitch) + round(
-                        _radius_outer * numpy.cos(phi) / shot_pitch)) * shot_pitch,
-                    (round(_tmp_beamdata.ypos / shot_pitch) + round(
-                        _radius_outer * numpy.sin(phi) / shot_pitch)) * shot_pitch) \
-                    for phi in _philist_support]
+                    ((round((_tmp_beamdata.xpos + _tmp_beamdata.dx / 2) / shot_pitch) + round(_radius_outer * numpy.cos(phi) / shot_pitch)) * shot_pitch,
+                    (round(_tmp_beamdata.ypos / shot_pitch) + round(_radius_outer * numpy.sin(phi) / shot_pitch)) * shot_pitch)
+                    for phi in _philist_support
+                ]
                 _support_pt_combined = copy.copy(_ini_pt)
                 _support_pt_combined.extend(_support_pt)
                 _support_pt_combined.extend(_ini_pt)
                 _support_frame = gdspy.Polygon(_support_pt_combined, layer=layer)
-                _right_grating_tmp = gdspy.fast_boolean(_right_grating_tmp, _support_frame, 'not', max_points=0,
-                                                        layer=layer)
+                _right_grating_tmp = gdspy.fast_boolean(_right_grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
 
             if i == 0:
                 _right_grating = _right_grating_tmp
@@ -1033,10 +780,10 @@ class Phc(Component):
         _tmp_beamdata = copy.copy(beamdata)
 
         _linkerdata_inner = self.PLTdata(xpos=_tmp_beamdata.xpos, ypos=(ymin + ymax) / 2.0, dx=_tmp_beamdata.dx, dy=ymax - ymin - 2.0 * linker_edgeoffset - 2.0 * linker_connector_width)
-        _tmp_linker_inner = self.linker_polygon(_linkerdata_inner, layer)
+        _tmp_linker_inner = linker_polygon(_linkerdata_inner, layer)
 
         _linkerdata_outer = self.PLTdata(xpos=_tmp_beamdata.xpos, ypos=(ymin + ymax) / 2.0, dx=_tmp_beamdata.dx + 2.0 * linker_width, dy=ymax - ymin - 2.0 * linker_edgeoffset)
-        _tmp_linker_outer = self.linker_polygon(_linkerdata_outer, layer)
+        _tmp_linker_outer = linker_polygon(_linkerdata_outer, layer)
 
         if round_corner is True:
             # _tmp_linker_inner = _tmp_linker_inner.fillet(corner_bend_rad, points_per_2pi=corner_bend_pts)
@@ -1053,7 +800,7 @@ class Phc(Component):
                 (xmin + linker_edgeoffset, _tmp_notch_ypos - linker_beam_size / 2.0),
                 (xmin, _tmp_notch_ypos - linker_beam_size / 2.0)
             ], layer=layer)
-            _tmp_upper_triangle, _tmp_lower_triangle = self.pinch_pt_polygon(linker_beam_size, linker_notch_size,
+            _tmp_upper_triangle, _tmp_lower_triangle = pinch_pt_polygon(linker_beam_size, linker_notch_size,
                                                                         xmin + linker_edgeoffset / 2.0, _tmp_notch_ypos,
                                                                         layer)
             _tmp_beam_polygon_L = gdspy.fast_boolean(_tmp_beam_polygon_L, _tmp_upper_triangle, 'not', max_points=0,
@@ -1068,7 +815,7 @@ class Phc(Component):
                 (xmax, _tmp_notch_ypos - linker_beam_size / 2.0),
                 (xmax - linker_edgeoffset, _tmp_notch_ypos - linker_beam_size / 2.0)
             ], layer=layer)
-            _tmp_upper_triangle, _tmp_lower_triangle = self.pinch_pt_polygon(linker_beam_size, linker_notch_size,
+            _tmp_upper_triangle, _tmp_lower_triangle = pinch_pt_polygon(linker_beam_size, linker_notch_size,
                                                                         xmax - linker_edgeoffset / 2.0, _tmp_notch_ypos,
                                                                         layer)
             _tmp_beam_polygon_R = gdspy.fast_boolean(_tmp_beam_polygon_R, _tmp_upper_triangle, 'not', max_points=0,
@@ -1090,7 +837,7 @@ class Phc(Component):
                 (_tmp_notch_xpos + linker_beam_size / 2.0, ymax),
                 (_tmp_notch_xpos - linker_beam_size / 2.0, ymax)
             ], layer=layer)
-            _tmp_left_triangle, _tmp_right_triangle = self.pinch_pt_polygon_vertical(linker_beam_size, linker_notch_size,
+            _tmp_left_triangle, _tmp_right_triangle = pinch_pt_polygon_vertical(linker_beam_size, linker_notch_size,
                                                                                 _tmp_notch_xpos,
                                                                                 ymax - linker_edgeoffset / 2.0, layer)
             _tmp_beam_polygon_T = gdspy.fast_boolean(_tmp_beam_polygon_T, _tmp_left_triangle, 'not', max_points=0,
@@ -1105,7 +852,7 @@ class Phc(Component):
                 (_tmp_notch_xpos + linker_beam_size / 2.0, ymin),
                 (_tmp_notch_xpos - linker_beam_size / 2.0, ymin)
             ], layer=layer)
-            _tmp_left_triangle, _tmp_right_triangle = self.pinch_pt_polygon_vertical(linker_beam_size, linker_notch_size,
+            _tmp_left_triangle, _tmp_right_triangle = pinch_pt_polygon_vertical(linker_beam_size, linker_notch_size,
                                                                                 _tmp_notch_xpos,
                                                                                 ymin + linker_edgeoffset / 2.0, layer)
             _tmp_beam_polygon_B = gdspy.fast_boolean(_tmp_beam_polygon_B, _tmp_left_triangle, 'not', max_points=0,
@@ -1180,14 +927,14 @@ class Phc(Component):
                 )
 
                 if pinch_pt_L is True:
-                    _tmp_upper_triangle, _tmp_lower_triangle = self.pinch_pt_polygon(
+                    _tmp_upper_triangle, _tmp_lower_triangle = pinch_pt_polygon(
                         _tmp_beamdata.dy, pinch_pt_size,
                                                                                 _tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0 + pinch_pt_L_offset,
                                                                                 _tmp_beamdata.ypos, layer)
                     _tmp_beam_polygon = gdspy.fast_boolean(_tmp_beam_polygon, _tmp_upper_triangle, 'not', max_points=0, layer=layer)
                     _tmp_beam_polygon = gdspy.fast_boolean(_tmp_beam_polygon, _tmp_lower_triangle, 'not', max_points=0, layer=layer)
                 if pinch_pt_R is True:
-                    _tmp_upper_triangle, _tmp_lower_triangle = self.pinch_pt_polygon(
+                    _tmp_upper_triangle, _tmp_lower_triangle = pinch_pt_polygon(
                         _tmp_beamdata.dy, pinch_pt_size, 
                         _tmp_beamdata.xpos + _tmp_beamdata.dx / 2.0 - pinch_pt_R_offset, 
                         _tmp_beamdata.ypos, layer
@@ -1209,8 +956,8 @@ class Phc(Component):
                 _circ_grating_combined = self.write_circ_grating(beamdata, beam_dy_list, grating_support_size, layer=5)
                 _box_write_area = gdspy.fast_boolean(_box_write_area, _circ_grating_combined, 'or', max_points=0, layer=layer)
             if pattern_number is not None:
-                _left_pattern_number = self.create_phc_label(cell, _xmin + linker_edgeoffset + linker_width / 2.0, _ymax - linker_edgeoffset - text_dist_to_top, pattern_number)
-                _right_pattern_number = self.create_phc_label(cell, _xmax - linker_edgeoffset - linker_width / 2.0, _ymax - linker_edgeoffset - text_dist_to_top, pattern_number)
+                _left_pattern_number = create_phc_label(cell, _xmin + linker_edgeoffset + linker_width / 2.0, _ymax - linker_edgeoffset - text_dist_to_top, pattern_number)
+                _right_pattern_number = create_phc_label(cell, _xmax - linker_edgeoffset - linker_width / 2.0, _ymax - linker_edgeoffset - text_dist_to_top, pattern_number)
                 _pattern_number_combined = gdspy.fast_boolean(_left_pattern_number, _right_pattern_number, 'or', max_points=0, layer=layer)
                 _box_write_area = gdspy.fast_boolean(_box_write_area, _pattern_number_combined, 'xor', max_points=0, layer=layer)
 
@@ -1264,7 +1011,7 @@ class Phc(Component):
         # write_beam_single(cell, _beam_write)
         return _dy_list
 
-    def PhC_Writer(self, param_sweep, end_period=end_period, blank_guides=num_guides, text=text):
+    def PhC_Writer(self, param_sweep, end_period=end_period, blank_guides=num_guides, CREATE_LABEL=True):
 
         acav = param_sweep[1][0]
         amir = param_sweep[1][1]
@@ -1280,7 +1027,7 @@ class Phc(Component):
         dy_list = self.write_beam_array(beams, rowicolj)
 
         circ_rowicolj = self.PLTdata(xpos=rowicolj.xpos - hole_pos_offset, ypos=rowicolj.ypos, dx=hx, dy=hy)
-        self.write_hole_2D(
+        Beam.write_multiple_hole(
             beams, 
             rowicolj, 
             circ_rowicolj, 
@@ -1302,7 +1049,8 @@ class Phc(Component):
             edge_underdose=ring_underdose
         )
         outer_box = self.write_outer_box(
-            beams, 
+            # beams, 
+            gdspy.Cell(f"temptemptemp-{param_sweep[0]}"), 
             rowicolj, 
             dy_list, 
             grating_spacer=grating_spacer, 
@@ -1312,12 +1060,12 @@ class Phc(Component):
             circ_grating=True, 
             reverse_tone=reverse_tone
         )
-        self.write_outer_frame(
+        SupportStructure.write_outer_frame(
             beams, 
             rowicolj, 
             dy_list,
             outer_box, 
-            pattern_number=param_sweep[0] if text else None, 
+            pattern_number=param_sweep[0] if CREATE_LABEL else None, 
             reverse_tone=reverse_tone
         )
         return beams
@@ -1346,42 +1094,6 @@ class Phc(Component):
         support_mask_pos = gdspy.CellReference(holder, (x_frame/2, 3300))
         cell_main.add(support_mask_pos)
 
-    @classmethod
-    def create_phc_variations(cls):
-        
-        beam_width_variations             = [470]                          # previously wy_list
-        beam_height_variations            = []                             # previously 
-        hole_width_variations             = [63, 66, 69, 73, 76, 79]       # previously hx_list
-        hole_height_variations            = [180, 184, 188, 192, 196, 200] # previously hy_list
-        hole_spacing_variations           = [155.5]                        # previously acav
-        hole_group_padding_variations     = [172.1]                        # previously amir
-        hole_modification_func_variations = []                             # previously 
-        hole_count_variations             = [10]                           # previously mirror_list
-
-        cavity_list = [16]  # number of holes with acav spacing
-        taper_holes = [0]
-
-        beam_width
-        beam_height
-        hole_width
-        hole_height
-        hole_spacing
-        hole_group_padding
-        hole_modification_func
-        hole_count
-
-    def get_params_for_thing(self):
-        
-        device_name_to_params = zip(
-            dev_list, 
-            np.array(np.meshgrid(acav, amir, wy_list, mirror_list, cavity_list, hx_list, hy_list, taper_holes)).T.reshape(-1, 8).astype(int)
-        )
-
-        param_sweep = np.array(np.meshgrid(acav, amir, wy_list, mirror_list, cavity_list, hx_list, hy_list, taper_holes)).T.reshape(-1, 8).astype(int)
-        for device_id, params in zip(dev_list, param_sweep):
-            print(device_id)
-            print(params)
-
     def defineDevice(self, wg_w, ring_r, coupling_l, coupling_gap, grating_offset, g):
         # Create the grating couplers
         for i in range(n_gratings):
@@ -1391,19 +1103,19 @@ class Phc(Component):
 
         # Create the reflector grating
         for i in range(reflector_n_gratings):
-            reflector_post = gdspy.Rectangle((reflector_ew + i * reflector_period, - reflector_w / 2),
-                                            (reflector_ew + i * reflector_period + reflector_fw, reflector_w / 2))
+            reflector_post = gdspy.Rectangle(
+                (reflector_ew + i * reflector_period, - reflector_w / 2),
+                (reflector_ew + i * reflector_period + reflector_fw, reflector_w / 2)
+            )
             reflector_cell.add(reflector_post)
 
         # Create the grating coupler taper
-        grating_taper_points = [(0, -wg_w / 2), (0, wg_w / 2), (grating_taper_length, grating_w / 2),
-                                (grating_taper_length, -grating_w / 2)]
+        grating_taper_points = [(0, -wg_w / 2), (0, wg_w / 2), (grating_taper_length, grating_w / 2), (grating_taper_length, -grating_w / 2)]
         grating_taper_poly = gdspy.Polygon(grating_taper_points)
         grating_taper_cell.add(grating_taper_poly)
 
         # Create the reflector taper
-        reflector_taper_points = [(0, -wg_w / 2), (0, wg_w / 2), (reflector_taper_length, reflector_w / 2),
-                                (reflector_taper_length, -reflector_w / 2)]
+        reflector_taper_points = [(0, -wg_w / 2), (0, wg_w / 2), (reflector_taper_length, reflector_w / 2), (reflector_taper_length, -reflector_w / 2)]
         reflector_taper_poly = gdspy.Polygon(reflector_taper_points)
         reflector_taper_cell.add(reflector_taper_poly)
 
@@ -1442,26 +1154,20 @@ class Phc(Component):
         text = gdspy.Text(str(int(coupling_gap * 1000)), 4, (-2.5, -20))
         device.add(text)
 
-        device.add(ring)
-        device.add(ring2)
-        device.add(coupler)
-        device.add(grating_taper)
-        device.add(coupler_grating)
-        device.add(reflector_taper)
-        device.add(reflector_grating)
-
+        device.add([ring, ring2, coupler, grating_taper, coupler_grating, reflector_taper, reflector_grating])
         return device
 
+    # def get_membrane(self):
+    #     pass
+        
     def defineMembrane(self, identifier, spacing, spacing_y, length, height, layer = 5):
         # Create a membrane cell for each desired membrane size
 
         cell_membrane_nohole = gdspy.Cell('membrane' + identifier)
 
         # Define the frame for the membrane
-        membrane_outer_frame = gdspy.Rectangle((-spacing / 2, spacing_y / 2),
-                                            (spacing / 2, -spacing_y / 2), layer=layer)
-        membrane_inner_frame = gdspy.Rectangle((-length / 2 - gap, height / 2 + gap),
-                                            (length / 2 + gap, -height / 2 - gap), layer=layer)
+        membrane_outer_frame = gdspy.Rectangle((-spacing / 2, spacing_y / 2), (spacing / 2, -spacing_y / 2), layer=layer)
+        membrane_inner_frame = gdspy.Rectangle((-length / 2 - gap, height / 2 + gap), (length / 2 + gap, -height / 2 - gap), layer=layer)
         membrane_frame = gdspy.boolean(membrane_outer_frame, membrane_inner_frame, "not", layer=layer)
         # Define the membrane itself
         membrane = gdspy.Rectangle((-length / 2, height / 2), (length / 2, -height / 2), layer=layer)
@@ -1545,34 +1251,36 @@ class Phc(Component):
         return cell_membrane_row_nohole
 
     def create(self):
-
-        self.get_params_for_thing()
-
-        i = 0
+        device_id = 0
         for k in range(num_rows):
-            # Write multiple rows
             for j in range(num_cols):
+
+                # ---- attributes --------------------
                 name = num_cols * k + j
+                gap = gaps[j]
+                params = param_sweep[name]
+                width = widths[k]
+                # ------------------------------------
+
                 xpos = (k * spacing - spacing * (len(widths) - 1) / 2) * Unit.um.value
                 ypos = (spacing_y / 2 + j * spacing_y - spacing_y * len(gaps) * pairs / 2) * Unit.um.value
                 # QFC Device
                 if writeQFC:
-                    device = self.defineDevice(widths[k], ring_r, coupling_l, gaps[j], grating_offset, g)
+                    device = self.defineDevice(width, ring_r, coupling_l, gap, grating_offset, g)  # what is g? TODO
                     device_pos = gdspy.CellReference(device, (xpos, ypos + ringPos_offset_y))
                     self.god_cell.add(device_pos)
 
-                if PhCSweeper and not writePhC and i == 0:
+                if PhCSweeper and not writePhC and device_id == 0:
                     phc_pos = gdspy.CellReference(phc_sweep, (xpos, ypos - phc_y_offset))
                     self.god_cell.add(phc_pos)
 
                 if writePhC:
-                    phc = self.PhC_Writer(param_sweep[name], end_period=end_period, blank_guides=num_guides, text=text)
+                    phc = self.PhC_Writer(params, end_period=end_period, blank_guides=num_guides, CREATE_LABEL=text)
                     phc_pos = gdspy.CellReference(phc, (xpos, ypos - phc_y_offset))
                     self.god_cell.add(phc_pos)
 
-                if writeMems and i == 0:
-                    identifier = str(j) + str(k)
-                    membrane = self.defineMembrane(identifier, spacing, spacing_y, length, height, layer=5)
+                if writeMems and device_id == 0:
+                    membrane = self.defineMembrane(f"{j}{k}", spacing, spacing_y, length, height, layer=5)
 
                     phc_sweep_frame = gdspy.Rectangle((-length/2, -height/2), (length/2, height/2), layer=5)
                     phc_sweep_frame_cell.add(phc_sweep_frame)
@@ -1584,10 +1292,9 @@ class Phc(Component):
                     self.god_cell.add(membrane_pos)
 
                 # # Supports Mask
-                if supportsMaskBool:
-                    if k == 0 and j == 0:
-                        self.supportsMask(name, xpos, ypos, spacing)
-                i += 1
+                if supportsMaskBool and k == 0 and j == 0:
+                    self.supportsMask(name, xpos, ypos, spacing)
+                device_id += 1
             return
 
 
@@ -1601,15 +1308,172 @@ class PhcGroup:
 
     """
 
-class Supports:
+class SupportStructure:
 
     """
     Tabs used to cut the PhcGroup from the device layer.
     
     """
+    
+    @dataclass
+    class PLTdata:
+        xpos: float
+        ypos: float
+        dx: float
+        dy: float
 
     def __init__(self) -> None:
         pass
+
+    @classmethod
+    def write_support_region(cls, innerframe, layer=3):
+
+        _support_box_outer = copy.copy(innerframe)
+        _ymin = _support_box_outer.ypos - _support_box_outer.dy / 2.0
+        _ymax = _support_box_outer.ypos + _support_box_outer.dy / 2.0
+        _xmin = _support_box_outer.xpos - _support_box_outer.dx / 2.0
+        _xmax = _support_box_outer.xpos + _support_box_outer.dx / 2.0
+        _tmp_support_outer = linker_polygon(_support_box_outer, layer)
+
+        _support_box_inner = copy.copy(_support_box_outer)
+        _support_box_inner.dx = _support_box_inner.dx - 2 * overlap_width
+        _support_box_inner.dy = _support_box_inner.dy - 2 * overlap_width
+        _tmp_support_inner = linker_polygon(_support_box_inner, layer)
+
+        _write_field = copy.copy(_support_box_outer)
+        _write_field.dx = write_field_x_size
+        _write_field.dy = write_field_y_size
+        _tmp_write_field = linker_polygon(_write_field, layer)
+
+        _support_outline = copy.copy(_support_box_outer)
+        _support_outline.dx = _support_outline.dx + 2 * support_connector_width
+        _support_outline.dy = _support_outline.dy + 2 * support_connector_width
+        _tmp_support_outline = linker_polygon(_support_outline, layer)
+
+        _box_write_area = gdspy.fast_boolean(_tmp_support_outer, _tmp_support_inner, 'not', max_points=0, layer=layer)
+
+        _tmp_notch_yarray = (_support_box_outer.dy - corner_bend_rad * 2 - support_beam_size) * numpy.linspace(0, 1.0, num=num_ysupport)
+        for i in range(num_ysupport):
+            _tmp_notch_ypos = _ymin * 1.15 + corner_bend_rad + support_beam_size / 2.0 + _tmp_notch_yarray[i]
+            _tmp_beam_polygon_L = gdspy.Polygon(
+                [
+                    (_xmin - support_connector_width, _tmp_notch_ypos - support_beam_size / 2.0),
+                    (_xmin - support_connector_width, _tmp_notch_ypos + support_beam_size / 2.0),
+                    (_xmin, _tmp_notch_ypos + support_beam_size / 2.0),
+                    (_xmin, _tmp_notch_ypos - support_beam_size / 2.0),
+                    (_xmin - support_connector_width, _tmp_notch_ypos - support_beam_size / 2.0)
+                ], 
+                layer=layer
+            )
+            _tmp_upper_triangle, _tmp_lower_triangle = pinch_pt_polygon(
+                support_beam_size, support_notch_size,
+                _xmin - support_connector_width / 2.0,
+                _tmp_notch_ypos, layer
+            )
+            _tmp_beam_polygon_L = gdspy.fast_boolean(_tmp_beam_polygon_L, _tmp_upper_triangle, 'not', max_points=0, layer=layer)
+            _tmp_beam_polygon_L = gdspy.fast_boolean(_tmp_beam_polygon_L, _tmp_lower_triangle, 'not', max_points=0, layer=layer)
+
+            _tmp_beam_polygon_R = gdspy.Polygon(
+                [
+                    (_xmax, _tmp_notch_ypos - support_beam_size / 2.0),
+                    (_xmax, _tmp_notch_ypos + support_beam_size / 2.0),
+                    (_xmax + support_connector_width, _tmp_notch_ypos + support_beam_size / 2.0),
+                    (_xmax + support_connector_width, _tmp_notch_ypos - support_beam_size / 2.0),
+                    (_xmax, _tmp_notch_ypos - support_beam_size / 2.0)
+                ], 
+                layer=layer
+            )
+            _tmp_upper_triangle, _tmp_lower_triangle = pinch_pt_polygon(
+                support_beam_size, support_notch_size,
+                _xmax + support_connector_width / 2.0,
+                _tmp_notch_ypos, layer
+            )
+            _tmp_beam_polygon_R = gdspy.fast_boolean(_tmp_beam_polygon_R, _tmp_upper_triangle, 'not', max_points=0, layer=layer)
+            _tmp_beam_polygon_R = gdspy.fast_boolean(_tmp_beam_polygon_R, _tmp_lower_triangle, 'not', max_points=0, layer=layer)
+
+            _box_write_area = gdspy.fast_boolean(_box_write_area, _tmp_beam_polygon_L, 'or', max_points=0, layer=layer)
+            _box_write_area = gdspy.fast_boolean(_box_write_area, _tmp_beam_polygon_R, 'or', max_points=0, layer=layer)
+
+        _tmp_notch_xarray = (_support_box_outer.dx - corner_bend_rad * 2 - support_beam_size) * numpy.linspace(0, 1.0, num=num_xsupport)
+        for i in range(num_xsupport):
+            _tmp_notch_xpos = _xmin + corner_bend_rad + support_beam_size / 2.0 + _tmp_notch_xarray[i]
+            _tmp_beam_polygon_T = gdspy.Polygon(
+                [
+                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymax),
+                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymax + support_connector_width),
+                    (_tmp_notch_xpos + support_beam_size / 2.0, _ymax + support_connector_width),
+                    (_tmp_notch_xpos + support_beam_size / 2.0, _ymax),
+                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymax)
+                ],
+                layer=layer
+            )
+            _tmp_left_triangle, _tmp_right_triangle = pinch_pt_polygon_vertical(
+                support_beam_size, support_notch_size,
+                _tmp_notch_xpos,
+                _ymax + support_connector_width / 2.0,
+                layer
+            )
+            _tmp_beam_polygon_T = gdspy.fast_boolean(_tmp_beam_polygon_T, _tmp_left_triangle, 'not', max_points=0, layer=layer)
+            _tmp_beam_polygon_T = gdspy.fast_boolean(_tmp_beam_polygon_T, _tmp_right_triangle, 'not', max_points=0, layer=layer)
+
+            _tmp_beam_polygon_B = gdspy.Polygon(
+                [
+                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymin - support_connector_width),
+                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymin),
+                    (_tmp_notch_xpos + support_beam_size / 2.0, _ymin),
+                    (_tmp_notch_xpos + support_beam_size / 2.0, _ymin - support_connector_width),
+                    (_tmp_notch_xpos - support_beam_size / 2.0, _ymin - support_connector_width)
+                ],
+                layer=layer
+            )
+            _tmp_left_triangle, _tmp_right_triangle = pinch_pt_polygon_vertical(
+                support_beam_size, support_notch_size,
+                _tmp_notch_xpos,
+                _ymin - support_connector_width / 2.0,
+                layer
+            )
+            _tmp_beam_polygon_B = gdspy.fast_boolean(_tmp_beam_polygon_B, _tmp_left_triangle, 'not', max_points=0, layer=layer)
+            _tmp_beam_polygon_B = gdspy.fast_boolean(_tmp_beam_polygon_B, _tmp_right_triangle, 'not', max_points=0, layer=layer)
+
+            _box_write_area = gdspy.fast_boolean(_box_write_area, _tmp_beam_polygon_T, 'or', max_points=0, layer=layer)
+            _box_write_area = gdspy.fast_boolean(_box_write_area, _tmp_beam_polygon_B, 'or', max_points=0, layer=layer)
+
+        _support_combined = gdspy.fast_boolean(_tmp_write_field, _tmp_support_outline, 'not', max_points=0, layer=layer)
+        _support_combined = gdspy.fast_boolean(_support_combined, _box_write_area, 'or', max_points=0, layer=layer)
+
+        return _support_combined
+
+    @classmethod
+    def write_outer_frame(cls, cell, beamdata, beam_dy_list, outer_box, pattern_number=None, reverse_tone=False, layer=3):
+
+        _ymin = beamdata.ypos - beam_dy_list[0] / 2.0 - edge_offset
+        _ymax = _ymin + (num_beam - 1) * beam_spacing + numpy.sum(beam_dy_list) + edge_offset * 2
+        _tmp_beamdata = copy.copy(beamdata)
+        _support_inner = cls.PLTdata(xpos=_tmp_beamdata.xpos, ypos=(_ymin + _ymax) / 2.0, dx=beamdata.dx + 2 * linker_width + 2 * linker_edgeoffset, dy=_ymax - _ymin)
+
+        _frame_write_area = cls.write_support_region(_support_inner, layer)
+
+        if pattern_number is not None:
+            _pattern_number_to_write = create_phc_label(pattern_number, textheight, (_support_inner.xpos-8e3, _support_inner.ypos + _support_inner.dy / 2.0 + 2.5e3))
+            # create_phc_label(pattern_number, size=textheight, position=(xloc, yloc), font_prop=None, tolerance=0.1):
+            _frame_write_area = gdspy.fast_boolean(_frame_write_area, _pattern_number_to_write, 'not', max_points=0, layer=layer)
+
+        if not reverse_tone:
+            bounds = _frame_write_area.get_bounding_box()
+
+            shift = 5000
+
+            box = gdspy.Rectangle(numpy.array(bounds[0]) - shift, numpy.array(bounds[1]) + shift, layer=layer)
+            bounds_inner = outer_box.get_bounding_box()
+            box_inner = gdspy.Rectangle(bounds_inner[0], bounds_inner[1], layer=layer)
+            box_inner = box_inner.fillet(corner_bend_rad, points_per_2pi=corner_bend_pts)
+
+            _box_write_area_reverse = gdspy.fast_boolean(box, _frame_write_area, 'not', max_points=0, layer=layer)
+            _box_write_area_reverse = gdspy.fast_boolean(_box_write_area_reverse, box_inner, 'not', max_points=0, layer=layer)
+            cell.add(_box_write_area_reverse)
+        else:
+            cell.add(_frame_write_area)
+
 
 
 class WorkArea(Component):
@@ -1662,7 +1526,6 @@ class WorkArea(Component):
                 for referenced_cell in position_id.get_referenced_cells():
                     manufacturing_boundary = gdspy.boolean(manufacturing_boundary, referenced_cell, "not", layer=cls.LAYER)
             return manufacturing_boundary
-
         
     class LithoMark:
             
@@ -1690,8 +1553,8 @@ class WorkArea(Component):
         def create_litho_marks(cls, manufacturing_boundary, device_writing_frame):
             """ Technically we don't need manufacturing_boundary... TODO (previously litho_marks). """
             cls.create_litho_mark_rects()
-            x_coords = np.linspace(device_writing_frame.min_x * cls.DIMENSION_SCALAR, device_writing_frame.max_x * cls.DIMENSION_SCALAR, num=cls.SIDE_COUNT)
-            y_coords = np.linspace(device_writing_frame.min_y * cls.DIMENSION_SCALAR, device_writing_frame.max_y * cls.DIMENSION_SCALAR, num=cls.SIDE_COUNT)
+            x_coords = numpy.linspace(device_writing_frame.min_x * cls.DIMENSION_SCALAR, device_writing_frame.max_x * cls.DIMENSION_SCALAR, num=cls.SIDE_COUNT)
+            y_coords = numpy.linspace(device_writing_frame.min_y * cls.DIMENSION_SCALAR, device_writing_frame.max_y * cls.DIMENSION_SCALAR, num=cls.SIDE_COUNT)
             referenced_cells = []
             for y_i, y_coord in enumerate(y_coords):
                 for x_i, x_coord in enumerate(x_coords):

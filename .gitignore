@@ -1,4 +1,7 @@
+# ignore these filetypes
+*.cpython
 *.cpython
 
+# ignore these dirs
 .venv/
 */__pycache__
