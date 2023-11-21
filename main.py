@@ -1,5 +1,6 @@
 # Import requisite python packages
 from abc import abstractproperty
+from dataclasses import dataclass
 import enum
 from functools import cached_property
 import gdspy
@@ -11,22 +12,27 @@ import copy
 import numpy as np
 
 
-nm = 1
-um = 1000
+class Unit(enum.Enum):
+    nm = 1
+    um = 10**3
+    mm = 10**6
+
+# nm = 1
+# um = 1000
 
 # General Pattern Layout
 writeMems = False
 writePhC = True
 PhCSweeper = not writePhC
 writeQFC = False
-EBPG_markers = True
+# EBPG_markers = True
 litho_markers = True
 supportsMaskBool = False
 removeInnerMem = True
 
 
 # Define the key parameters of the membrane and support structure
-chip_size = 6000 * um  # The size of our chip - assumed to be 6mm x 6mm - reduce slightly in case of variations
+chip_size = 6000 * Unit.um.value  # The size of our chip - assumed to be 6mm x 6mm - reduce slightly in case of variations
 
 invert = False
 
@@ -206,7 +212,7 @@ spacing = length + safety + support_width * 2
 spacing_y = height + safety + support_width * 2
 
 
-phc_y_offset = (35 - 0.275) * um  # An arbitrary parameter for centering the devices at the origin
+phc_y_offset = (35 - 0.275) * Unit.um.value  # An arbitrary parameter for centering the devices at the origin
 
 column_size = num_rows * spacing
 pairs = 1
@@ -250,12 +256,12 @@ reflector_taper_length = 5
 # Define Alignment Marks
 
 write_size = (length + safety + gap * 2) * devs
-mark_pos = write_size * um
+mark_pos = write_size * Unit.um.value
 
-outer_frame = gdspy.Rectangle((-chip_size / 2, chip_size / 2), (chip_size / 2, -chip_size / 2), layer=4)
-inner_frame = gdspy.Rectangle((-spacing * um * num_rows / 2, spacing_y * um * num_cols * pairs / 2),
-                              (spacing * um * num_rows / 2, -spacing_y * um * num_cols * pairs / 2), layer=4)
-frame = gdspy.boolean(outer_frame, inner_frame, "not", layer=4)
+# outer_frame = gdspy.Rectangle((-chip_size / 2, chip_size / 2), (chip_size / 2, -chip_size / 2), layer=4)
+# inner_frame = gdspy.Rectangle((-spacing * Unit.um.value * num_rows / 2, spacing_y * Unit.um.value * num_cols * pairs / 2),
+#                               (spacing * Unit.um.value * num_rows / 2, -spacing_y * Unit.um.value * num_cols * pairs / 2), layer=4)
+# frame = gdspy.boolean(outer_frame, inner_frame, "not", layer=4)
 
 
 
@@ -1554,32 +1560,32 @@ def litho_marks():
             cell_main.add(mark)
 
 
-def ebeam_marks(frame):  # Marks defined in the Heidelberg for EBPG alignment
-    # # EPBG Alignment Marks
-    ebpg_mark_factor = 0.75
-    ebpg_size = 20 * um
-    corners = [mark_pos * ebpg_mark_factor, -mark_pos * ebpg_mark_factor]
+# def ebeam_marks(frame):  # Marks defined in the Heidelberg for EBPG alignment
+#     # # EPBG Alignment Marks
+#     ebpg_mark_factor = 0.75
+#     ebpg_size = 20 * um
+#     corners = [mark_pos * ebpg_mark_factor, -mark_pos * ebpg_mark_factor]
 
-    markHeidelberg = gdspy.Rectangle((0, 0), (ebpg_size, ebpg_size), layer=4)
-    EBPG_marks.add(markHeidelberg)
+#     markHeidelberg = gdspy.Rectangle((0, 0), (ebpg_size, ebpg_size), layer=4)
+#     EBPG_marks.add(markHeidelberg)
 
-    for i in corners:
-        square_pos = gdspy.CellReference(EBPG_marks, (i - ebpg_size / 2, i - ebpg_size / 2))
-        frame = gdspy.boolean(frame, square_pos, "not", layer=4)
+#     for i in corners:
+#         square_pos = gdspy.CellReference(EBPG_marks, (i - ebpg_size / 2, i - ebpg_size / 2))
+#         frame = gdspy.boolean(frame, square_pos, "not", layer=4)
 
-        square_pos = gdspy.CellReference(EBPG_marks, (-i - ebpg_size / 2, i - ebpg_size / 2))
-        frame = gdspy.boolean(frame, square_pos, "not", layer=4)
+#         square_pos = gdspy.CellReference(EBPG_marks, (-i - ebpg_size / 2, i - ebpg_size / 2))
+#         frame = gdspy.boolean(frame, square_pos, "not", layer=4)
 
-        # Additional markers to differentiate rotation.
-        bot_left_pos = gdspy.CellReference(EBPG_marks,
-                                           (-corners[0] - ebpg_size / 2, -corners[0] - ebpg_size / 2 - 600 * um))
-        frame = gdspy.boolean(frame, bot_left_pos, "not", layer=4)
+#         # Additional markers to differentiate rotation.
+#         bot_left_pos = gdspy.CellReference(EBPG_marks,
+#                                            (-corners[0] - ebpg_size / 2, -corners[0] - ebpg_size / 2 - 600 * um))
+#         frame = gdspy.boolean(frame, bot_left_pos, "not", layer=4)
 
-        bot_left_pos = gdspy.CellReference(EBPG_marks,
-                                           (-corners[0] - ebpg_size / 2 - 600 * um, -corners[0] - ebpg_size / 2))
-        frame = gdspy.boolean(frame, bot_left_pos, "not", layer=4)
+#         bot_left_pos = gdspy.CellReference(EBPG_marks,
+#                                            (-corners[0] - ebpg_size / 2 - 600 * um, -corners[0] - ebpg_size / 2))
+#         frame = gdspy.boolean(frame, bot_left_pos, "not", layer=4)
 
-    cell_main.add(frame)
+#     cell_main.add(frame)
 
 
 def supportsMask(name, xpos, ypos, spacing):
@@ -1678,8 +1684,8 @@ def executeWriting():
                 if k == 0 and j == 0:
                     supportsMask(name, xpos, ypos, spacing)
 
-            if EBPG_markers == True:
-                ebeam_marks(frame)
+            # if EBPG_markers == True:
+            #     ebeam_marks(frame)
             if litho_markers == True:
                 litho_marks()
             i+=1
@@ -1711,12 +1717,6 @@ handler.setFormatter(formatter)
 root.addHandler(handler)
 
 logger = logging.getLogger(__name__)
-
-
-class Unit(enum.Enum):
-    nm = 1
-    um = 10**3
-    mm = 10**6
 
 
 class GradingCoupler:
@@ -1781,7 +1781,6 @@ class PhcGroup:
     """
 
 
-
 class Rectangle(gdspy.Rectangle):
 
     def __init__(self, width, height, layer=0, center_to_origin=True):
@@ -1797,11 +1796,38 @@ class Rectangle(gdspy.Rectangle):
     @cached_property
     def bot_right_coords(self):
         return (self.width/2, -self.height/2) if self.center_to_origin else (self.width, 0)
+    
+    @cached_property
+    def bounding_box(self):
+        return self.get_bounding_box()
+
+    @cached_property
+    def min_x(self):
+        return self.bounding_box[0][0]
+
+    @cached_property
+    def min_y(self):
+        return self.bounding_box[0][1]
+
+    @cached_property
+    def max_x(self):
+        return self.bounding_box[1][0]
+
+    @cached_property
+    def max_y(self):
+        return self.bounding_box[1][1]
+
+
+class Square(Rectangle):
+
+    def __init__(self, side_length, layer=0, center_to_origin=True):
+        super().__init__(side_length, side_length, layer, center_to_origin)
 
 
 class Component:
 
     god_cell = gdspy.Cell("god_cell")
+    reference_cell = gdspy.Cell("reference_cell")
 
     @abstractproperty
     def geometries_to_add(self):
@@ -1812,6 +1838,13 @@ class Component:
             self.god_cell.add(geometry)
 
 
+
+
+"""
+A cell that is referenced must have the referenced geometry exist on some cell. 
+
+"""
+
 class WorkArea(Component):
 
     """
@@ -1819,62 +1852,87 @@ class WorkArea(Component):
 
     """
 
-    def __init__(self, x_length, y_length, layer) -> None:
+    EBPG_MARK_FACTOR = 0.75  # previously ebpg_mark_factor
+    POSITION_ID_SIDE_LENGTH = 20 * Unit.um.value
 
+    POSITION_ID_CELL = gdspy.Cell("position_id_cell")
+
+    @dataclass
+    class PositionId:
+        name: str
+        add_orienter: bool
+        coords: set  # no need to normalize to the origin because the square in the POSITION_ID_CELL is already centered
+
+        def get_referenced_cell(self):
+            return gdspy.CellReference(WorkArea.POSITION_ID_CELL, self.coords)
+        
+        def get_orienters(self):
+            x_sign = 1 if self.coords[0] > 0 else -1
+            y_sign = 1 if self.coords[1] > 0 else -1
+            return [
+                gdspy.CellReference(WorkArea.POSITION_ID_CELL, (self.coords[0], self.coords[1] + 600 * Unit.um.value * y_sign)),
+                gdspy.CellReference(WorkArea.POSITION_ID_CELL, (self.coords[0] + 600 * Unit.um.value * x_sign, self.coords[1])),
+            ]
+
+    def __init__(self, x_length, y_length, layer, add_position_ids=True) -> None:
         super().__init__()
-
         self.x_length = x_length
         self.y_length = y_length
         self.layer = layer
+        self.add_position_ids = add_position_ids
 
-        self.manufacturing_boundary = self.get_manufacturing_boundary()
-        self.writing_frame = self.get_writing_frame()
-        self.frame = self.get_frame()
-
-    def get_manufacturing_boundary(self):
+    @cached_property
+    def manufacturing_boundary(self):
         """ # The maximum chip area (previously: outer_frame). """
         return Rectangle(self.x_length, self.y_length, layer=4)
     
-    def get_writing_frame(self):
+    @cached_property
+    def writing_frame(self):
         """ # The main area the devices are written (previously: inner_frame). """
-        return Rectangle(spacing * um * num_rows, spacing_y * um * num_cols * pairs, layer=4)
+        return Rectangle(spacing * Unit.um.value * num_rows, spacing_y * Unit.um.value * num_cols * pairs, layer=self.layer)
 
-    def get_frame(self):
+    def create_position_id_rect(self):
+        """ This is a rectangle we're going to reference for creating the position_ids. """
+        rect = Square(side_length=self.POSITION_ID_SIDE_LENGTH, layer=self.layer)
+        self.POSITION_ID_CELL.add(rect)
+        return rect
+
+    def apply_position_ids(self, polygon):  # Marks defined in the Heidelberg for EBPG alignment
+        """ Marks defined in the Heidelberg for EBPG alignment (previously ebeam_marks). """
+        # we must first create the rect and add it to the POSITION_ID_CELL
+        self.create_position_id_rect()
+        # shouldn't the position identifiers for the ebpg alignment be based on the bounding box of the inner frame? TODO
+        write_size = (length + safety + gap * 2) * devs
+        mark_pos = write_size * Unit.um.value
+        
+        ebpg_mark_factor = 0.75  # EPBG Alignment Marks
+        position_ids = [
+            self.PositionId(name="top_right",    add_orienter=True,  coords=[mark_pos * ebpg_mark_factor, mark_pos * ebpg_mark_factor]),
+            self.PositionId(name="bottom_right", add_orienter=False, coords=[mark_pos * ebpg_mark_factor, -mark_pos * ebpg_mark_factor]),
+            self.PositionId(name="top_left",     add_orienter=False, coords=[-mark_pos * ebpg_mark_factor, mark_pos * ebpg_mark_factor]),
+            self.PositionId(name="bottom_left",  add_orienter=True,  coords=[-mark_pos * ebpg_mark_factor, -mark_pos * ebpg_mark_factor]),
+        ]
+        for position_id in position_ids:
+            referenced_cells = [position_id.get_referenced_cell()]
+            if position_id.add_orienter:
+                referenced_cells += position_id.get_orienters()
+            for referenced_cell in referenced_cells:
+                polygon = gdspy.boolean(polygon, referenced_cell, "not", layer=self.layer)
+        return polygon
+
+    @cached_property
+    def polygon(self):
         """ # The main area the devices are written (previously: frame). """
-        return gdspy.boolean(self.manufacturing_boundary, self.writing_frame, "not", layer=4)
+        frame_polygon = gdspy.boolean(self.manufacturing_boundary, self.writing_frame, "not", layer=self.layer)
+        if self.add_position_ids:
+            frame_polygon = self.apply_position_ids(frame_polygon)
+        return frame_polygon
     
     @property
     def geometries_to_add(self):
         return [
-            self.frame
+            self.polygon,
         ]
-
-    # def get_ebeam_marks(self):  # Marks defined in the Heidelberg for EBPG alignment
-    #     # # EPBG Alignment Marks
-    #     ebpg_mark_factor = 0.75
-    #     ebpg_size = 20 * um
-    #     corners = [mark_pos * ebpg_mark_factor, -mark_pos * ebpg_mark_factor]
-
-    #     markHeidelberg = gdspy.Rectangle((0, 0), (ebpg_size, ebpg_size), layer=4)
-    #     EBPG_marks.add(markHeidelberg)
-
-    #     for i in corners:
-    #         square_pos = gdspy.CellReference(EBPG_marks, (i - ebpg_size / 2, i - ebpg_size / 2))
-    #         frame = gdspy.boolean(frame, square_pos, "not", layer=4)
-
-    #         square_pos = gdspy.CellReference(EBPG_marks, (-i - ebpg_size / 2, i - ebpg_size / 2))
-    #         frame = gdspy.boolean(frame, square_pos, "not", layer=4)
-
-    #         # Additional markers to differentiate rotation.
-    #         bot_left_pos = gdspy.CellReference(EBPG_marks,
-    #                                         (-corners[0] - ebpg_size / 2, -corners[0] - ebpg_size / 2 - 600 * um))
-    #         frame = gdspy.boolean(frame, bot_left_pos, "not", layer=4)
-
-    #         bot_left_pos = gdspy.CellReference(EBPG_marks,
-    #                                         (-corners[0] - ebpg_size / 2 - 600 * um, -corners[0] - ebpg_size / 2))
-    #         frame = gdspy.boolean(frame, bot_left_pos, "not", layer=4)
-
-    #     cell_main.add(frame)
 
 
 class Creator:
@@ -1882,6 +1940,9 @@ class Creator:
     """
     EBPG: Electron Beam Projection Lithography (Raith EBPG system)
     Heidelberg Laser Writer: high-precision laser lithography system
+
+    https://gdsfactory.github.io/gdsfactory/index.html
+    https://en.wikipedia.org/wiki/Avalanche_photodiode
     """
 
     SAVE_DIR = "C:\\Users\\ericw\\playground\\gds_files"
@@ -1895,12 +1956,13 @@ class Creator:
         self.work_area = WorkArea(
             x_length=6 * Unit.mm.value,
             y_length=6 * Unit.mm.value,
-            layer=4
+            layer=4,
+            add_position_ids=True,
         )
 
     @cached_property
     def filename(self):
-        """ Ex: "2023-11-18-M12.gds" """
+        """ Ex: 2023-11-18-M12.gds """
         return f"{datetime.now().strftime('%Y-%m-%d')}-{self.name}.gds"
 
     @cached_property
