@@ -1,0 +1,4 @@
+*.cpython
+
+.venv/
+*/__pycache__
