@@ -26,7 +26,14 @@ def generate_cell_report(gds_file):
     )
 
 
-def get_mpl_polygons_from_gds_cell(cell):
+def get_mpl_polygons_from_gds_polygons(gds_polygons):
+    return [
+        Polygon(coords, closed=True, edgecolor='black', facecolor='none') 
+        for coords in gds_polygons.polygons
+    ]
+
+
+def get_mpl_polygons_from_gds_cell(cell):  # make thi better. TODO
     cell_geometries = cell.get_polygons(by_spec=True)
     polygons = []
     for coords, nested_coords_list in cell_geometries.items():

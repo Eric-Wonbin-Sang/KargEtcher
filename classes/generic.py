@@ -81,26 +81,8 @@ class Component:
             cls.god_cell.add(component.polygon)
 
 
-class Rectangle(gdspy.Rectangle):
+class PolygonMixin:
 
-    """
-    
-    """
-    
-    def __init__(self, width, height, layer=0, datatype=0, center_to_origin=True):
-        self.width = width
-        self.height = height
-        self.center_to_origin = center_to_origin
-        super().__init__(self.top_left_coords, self.bot_right_coords, layer=layer, datatype=datatype)
-
-    @cached_property
-    def top_left_coords(self):
-        return (-self.width/2, self.height/2) if self.center_to_origin else (0, self.height)
-    
-    @cached_property
-    def bot_right_coords(self):
-        return (self.width/2, -self.height/2) if self.center_to_origin else (self.width, 0)
-    
     @cached_property
     def bounding_box(self):
         return self.get_bounding_box()
@@ -122,6 +104,29 @@ class Rectangle(gdspy.Rectangle):
         return self.bounding_box[1][1]
 
 
+
+
+class Rectangle(gdspy.Rectangle, PolygonMixin):
+
+    """
+    
+    """
+    
+    def __init__(self, width, height, layer=0, datatype=0, center_to_origin=True):
+        self.width = width
+        self.height = height
+        self.center_to_origin = center_to_origin
+        super().__init__(self.top_left_coords, self.bot_right_coords, layer=layer, datatype=datatype)
+
+    @cached_property
+    def top_left_coords(self):
+        return (-self.width/2, self.height/2) if self.center_to_origin else (0, self.height)
+    
+    @cached_property
+    def bot_right_coords(self):
+        return (self.width/2, -self.height/2) if self.center_to_origin else (self.width, 0)
+    
+
 class Square(Rectangle):
 
     """
@@ -130,6 +135,72 @@ class Square(Rectangle):
     
     def __init__(self, side_length, layer=0, center_to_origin=True):
         super().__init__(side_length, side_length, layer, center_to_origin)
+
+
+class Polygon(gdspy.Polygon, PolygonMixin):
+
+    """
+    
+    """
+
+
+class CustomRectangle(Polygon):
+
+    """
+    
+    """
+
+    def __init__(self, width, height, x_modifier=None, x_subdivisions=None, y_modifier=None, y_subdivisions=None, layer=0, datatype=0):
+        self.width = width
+        self.height = height
+        self.x_modifier = x_modifier
+        self.x_subdivisions = x_subdivisions
+        self.y_modifier = y_modifier
+        self.y_subdivisions = y_subdivisions
+        super().__init__(self.points, layer, datatype)
+
+    @property
+    def points(self):
+        """
+        Let's do it like this:
+
+        >────────────┐
+        0            |
+        |            |
+        |            |
+        |            |
+        ╰────────────╯
+        
+        """
+        # Top Left Point
+        corner_points = [(-self.width/2, self.height/2)]
+        # Top X Line
+        if self.y_modifier and self.x_subdivisions:
+            part_length = self.width/(self.x_subdivisions + 2)  # we add two so that the corners are preserved
+            for i in range(self.x_subdivisions):
+                corner_points.append((-self.width/2 + (i + 1) * part_length, self.y_modifier(self.height/2)))
+        # Top Right Point
+        corner_points.append((self.width/2, self.height/2))
+        # Right Y Line
+        if self.x_modifier and self.y_subdivisions:
+            part_length = self.height/(self.y_subdivisions + 2)  # we add two so that the corners are preserved
+            for i in range(self.y_subdivisions):
+                corner_points.append((self.x_modifier(self.width/2), self.height/2 - (i + 1) * part_length))
+        # Bottom Right Point
+        corner_points.append((self.width/2, -self.height/2))
+        # Bottom X Line
+        if self.x_modifier and self.x_subdivisions:
+            part_length = self.width/(self.x_subdivisions + 2)  # we add two so that the corners are preserved
+            for i in range(self.x_subdivisions):
+                corner_points.append((self.width/2 - (i + 1) * part_length, self.height/2))
+        # Bottom Left Point
+        corner_points.append((-self.width/2, -self.height/2))
+        # Left Y Line
+        if self.y_modifier and self.y_subdivisions:
+            part_length = self.height/(self.y_subdivisions + 2)  # we add two so that the corners are preserved
+            for i in range(self.y_subdivisions):
+                corner_points.append((-self.width/2, -self.height/2 + (i + 1) * part_length))
+        return corner_points
 
 
 class PolygonOperations:
