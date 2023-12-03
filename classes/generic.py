@@ -102,8 +102,16 @@ class PolygonMixin:
     @cached_property
     def max_y(self):
         return self.bounding_box[1][1]
-
-
+    
+    @staticmethod
+    def fast_combine(*polygons, layer):
+        """ A standard way to combine multiple polygons. """
+        if len(polygons) < 2:
+            return next(polygons, None)
+        result, *remaining = polygons
+        for p in remaining:
+            result = gdspy.fast_boolean(result, p, 'or', max_points=0, layer=layer)
+        return result
 
 
 class Rectangle(gdspy.Rectangle, PolygonMixin):

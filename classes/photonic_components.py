@@ -6,31 +6,59 @@ from functools import cached_property
 import gdspy
 import numpy
 
-from classes.generic import (Component, Rectangle, Unit, better_dataclass,
+from classes.generic import (Component, Polygon, Rectangle, Unit, better_dataclass,
                              create_phc_label, linker_polygon,
                              pinch_pt_polygon, pinch_pt_polygon_vertical)
 from classes.layout_management import SupportStructure
-from classes.random_constants import (BEAM_SPACING, CELL_MAIN,
-                                      CIRC_GRATING_BASE, CORNER_BEND_PTS,
+from classes.random_constants import (BEAM_SPACING, CORNER_BEND_PTS,
                                       CORNER_BEND_RAD, DEVICE_COL_COUNT,
-                                      DEVICE_ROW_COUNT, DEVS, EDGE_OFFSET,
-                                      EVEN_SUPPORT_ANGLE, GAP, GRATING_ANGLE,
-                                      GRATING_CELL, GRATING_LINE_WIDTH,
-                                      GRATING_SPACING, GRATING_TAPER_CELL,
-                                      HEIGHT, HOLE_POS_OFFSET, LENGTH,
-                                      LINKER_BEAM_SIZE, LINKER_CONNECTOR_WIDTH,
+                                      DEVICE_ROW_COUNT, EDGE_OFFSET, GAP,
+                                      HEIGHT, LENGTH, LINKER_BEAM_SIZE,
                                       LINKER_EDGE_OFFSET, LINKER_NOTCH_SIZE,
-                                      LINKER_WIDTH, LINKER_X_NOTCHES,
-                                      LINKER_Y_NOTCHES,
-                                      NUM_CIRC_GRATING_POINTS, NUM_CIRC_POINTS,
-                                      NUM_GRATING, ODD_SUPPORT_ANGLE, PAIRS,
-                                      PHC_GROUP_COUNT, REFLECTOR_CELL,
-                                      REFLECTOR_TAPER_CELL, SHOT_PITCH, SPACER,
-                                      SPACING, SPACING_Y, SUPPORT_ANGLE_WIDTH,
-                                      SUPPORT_PINCH_LENGTH,
+                                      LINKER_WIDTH, LINKER_X_NOTCHES, PAIRS,
+                                      PHC_GROUP_COUNT, SPACING,
+                                      SPACING_Y, SUPPORT_PINCH_LENGTH,
                                       SUPPORT_PINCH_WIDTH, SUPPORT_PITCH,
-                                      SUPPORT_WIDTH, UNDER_EDGE_SIZE,
-                                      WRITE_FIELD_X_SIZE, WRITE_FIELD_Y_SIZE)
+                                      SUPPORT_WIDTH, WRITE_FIELD_X_SIZE,
+                                      WRITE_FIELD_Y_SIZE)
+
+CELL_MAIN = gdspy.Cell("main_cell")
+GRATING_CELL = gdspy.Cell("grating")
+REFLECTOR_CELL = gdspy.Cell("reflector")
+GRATING_TAPER_CELL = gdspy.Cell("grating_taper")
+REFLECTOR_TAPER_CELL = gdspy.Cell("reflector_taper")
+DEVS = 6
+SHOT_PITCH = 0.1
+NUM_CIRC_POINTS = 181
+
+# Parameters for nanobeam
+HOLE_POS_OFFSET = 0
+
+# For grating spacer
+SPACER = 0  # Spacer size
+
+UNDER_EDGE_SIZE = 12
+
+# Parameters for the linker
+LINKER_CONNECTOR_WIDTH = 1e3
+LINKER_NOTCH_SIZE = 500
+LINKER_BEAM_SIZE = 500
+LINKER_X_NOTCHES = 0
+LINKER_Y_NOTCHES = 0
+
+# Parameters for circular grating structure
+PERIOD = 777e-9
+DUTY_CYCLE = 0.376
+GRATING_LINE_WIDTH = numpy.round(PERIOD * (1 - DUTY_CYCLE) / 1e-9, 1)
+GRATING_SPACING = numpy.round(PERIOD * DUTY_CYCLE / 1e-9, 1)
+NUM_CIRC_GRATING_POINTS = 181
+NUM_GRATING = 2
+CIRC_GRATING_BASE = 1500
+GRATING_ANGLE = 10 * numpy.pi / 180  # 15 degree in radian
+ODD_SUPPORT_ANGLE = 75 * numpy.pi / 180  # 55 degree in radian
+EVEN_SUPPORT_ANGLE = numpy.pi / 2.0  # 90 degree in radian
+
+SUPPORT_ANGLE_WIDTH = 2.3 * numpy.pi / 180  # 10 degree in radian
 
 
 class Hole:
@@ -53,7 +81,7 @@ class Hole:
     """
 
 
-class NanoBeam(Rectangle):
+class NanoBeam(Polygon):
 
     """
     The area that houses the holes.
@@ -66,6 +94,10 @@ class NanoBeam(Rectangle):
     class Config:
         width_variations  : float  # previously wy_list
         height_variations : float  # previously 
+
+
+    def __init__(self, points, layer=0, datatype=0):
+        super().__init__(points, layer, datatype)
 
     @staticmethod
     def write_beam_single(cell, pltdata, layer=1):
@@ -186,11 +218,12 @@ class NanoBeam(Rectangle):
     OVER_EDGE_SIZE = 12
 
     @classmethod
-    def write_multiple_hole(cls, i, _initial_ypos, _tmp_beamdata, cell, beamdata, holedata, beam_dy_list, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, amir,
-                    end_period, guides, end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, edge_overdose=False,
-                    ring_overdose=False, ring_underdose=True, edge_underdose=True):
+    def create_nano_beam(
+            cls, i, _initial_ypos, _tmp_beamdata, cell, holedata, beam_dy_list, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, amir,
+            end_period, guides, end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, edge_overdose=False,
+            ring_overdose=False, ring_underdose=True, edge_underdose=True
+        ):
         """ (previously write_hole_2D). """
-
         holedata.ypos = _initial_ypos + i * BEAM_SPACING + numpy.sum(beam_dy_list[:i]) + beam_dy_list[i] / 2.0
         _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0
         _tmp_beamdata.dy = beam_dy_list[i]
@@ -254,225 +287,136 @@ class GratingCoupler:
     
     """
 
-    @staticmethod
-    def write_left_circ_grating(beamdata, layer=4):
+    def __init__(self, beam_position, layer) -> None:
 
-        _philist_L = numpy.linspace(numpy.pi / 2.0, numpy.pi * 3.0 / 2.0, NUM_CIRC_GRATING_POINTS - 1)
-        _philist_L = numpy.append(_philist_L, numpy.pi / 2.0)
+        self.beam_position = beam_position
+        self.layer = layer
+
+        self.left_shockwave = self.create_left_circ_grating(self.beam_position, layer=layer)
+        self.right_shockwave = self.create_right_circ_grating(self.beam_position, layer=layer)
+    
+    @classmethod
+    def create_shockwaves(cls, beamdata, is_left, layer):
+        """ idk what to call this, but this is a better name (was write_left_circ_grating/write_right_circ_grating). """
+
+        direction_mult = -1 if is_left else 1
+        some_angle = (numpy.pi * 3.0) if is_left else numpy.pi
+
+        phi_list = numpy.append(
+            numpy.linspace(
+                -1 * direction_mult * numpy.pi / 2.0, 
+                some_angle / 2.0, 
+                NUM_CIRC_GRATING_POINTS - 1
+            ), 
+            -1 * direction_mult * numpy.pi / 2.0
+        )
+        _ini_pt = [(beamdata.xpos + (direction_mult * beamdata.dx / 2), beamdata.ypos)]
         _tmp_beamdata = copy.copy(beamdata)
-        _ini_pt = [(_tmp_beamdata.xpos - _tmp_beamdata.dx / 2, _tmp_beamdata.ypos)]
-        #
-        # rough = gdspy.Rectangle((_tmp_beamdata.xpos - _tmp_beamdata.dx / 2, _tmp_beamdata.ypos - 4000),
-        #                         (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2 + 500, _tmp_beamdata.ypos - 4000), layer=9)
-
         _radius_inner = CIRC_GRATING_BASE
 
+        grating = None
         for i in range(NUM_GRATING + 1):
-            _left_grating_inner = gdspy.Polygon([
-                ((round((_tmp_beamdata.xpos - _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(
-                    _radius_inner * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-                (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_inner * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH) \
-                for phi in _philist_L], layer=layer)
+            grating_inner = gdspy.Polygon(
+                [
+                    (
+                        (round((_tmp_beamdata.xpos + (direction_mult * _tmp_beamdata.dx / 2)) / SHOT_PITCH) + round(_radius_inner * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
+                        (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_inner * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH
+                    )
+                    for phi in phi_list
+                ], 
+                layer=layer
+            )
 
             _radius_outer = _radius_inner + GRATING_SPACING
-            _left_grating_outer = gdspy.Polygon([
-                ((round((_tmp_beamdata.xpos - _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(
-                    _radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-                (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH) \
-                for phi in _philist_L], layer=layer)
-
-            _left_grating_tmp = gdspy.fast_boolean(_left_grating_outer, _left_grating_inner, 'not', max_points=0, layer=layer)
-            if (i % 2 == 0):
-                _radius_outer = _radius_outer + 10
-                _philist_support = numpy.linspace(numpy.pi / 2.0 + ODD_SUPPORT_ANGLE - SUPPORT_ANGLE_WIDTH / 2.0,
-                                                numpy.pi / 2.0 + ODD_SUPPORT_ANGLE + SUPPORT_ANGLE_WIDTH / 2.0,
-                                                NUM_CIRC_GRATING_POINTS - 1)
-                _support_pt = [
-                    ((round((_tmp_beamdata.xpos - _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(
-                        _radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-                    (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(
-                        _radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH) \
-                    for phi in _philist_support]
-                _support_pt_combined = copy.copy(_ini_pt)
-                _support_pt_combined.extend(_support_pt)
-                _support_pt_combined.extend(_ini_pt)
-                _support_frame = gdspy.Polygon(_support_pt_combined, layer=layer)
-                _left_grating_tmp = gdspy.fast_boolean(_left_grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
-
-                _philist_support = numpy.linspace(numpy.pi * 3.0 / 2.0 - ODD_SUPPORT_ANGLE - SUPPORT_ANGLE_WIDTH / 2.0,
-                                                numpy.pi * 3.0 / 2.0 - ODD_SUPPORT_ANGLE + SUPPORT_ANGLE_WIDTH / 2.0,
-                                                NUM_CIRC_GRATING_POINTS - 1)
-                _support_pt = [
-                    ((round((_tmp_beamdata.xpos - _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(
-                        _radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-                    (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(
-                        _radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH) \
-                    for phi in _philist_support]
-                _support_pt_combined = copy.copy(_ini_pt)
-                _support_pt_combined.extend(_support_pt)
-                _support_pt_combined.extend(_ini_pt)
-                _support_frame = gdspy.Polygon(_support_pt_combined, layer=layer)
-                _left_grating_tmp = gdspy.fast_boolean(_left_grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
-            else:
-                _radius_outer = _radius_outer + 10
-                _philist_support = numpy.linspace(numpy.pi / 2.0 + EVEN_SUPPORT_ANGLE - SUPPORT_ANGLE_WIDTH / 2.0,
-                                                numpy.pi / 2.0 + EVEN_SUPPORT_ANGLE + SUPPORT_ANGLE_WIDTH / 2.0,
-                                                NUM_CIRC_GRATING_POINTS - 1)
-                _support_pt = [
-                    ((round((_tmp_beamdata.xpos - _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(
-                        _radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-                    (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(
-                        _radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH) \
-                    for phi in _philist_support]
-                _support_pt_combined = copy.copy(_ini_pt)
-                _support_pt_combined.extend(_support_pt)
-                _support_pt_combined.extend(_ini_pt)
-                _support_frame = gdspy.Polygon(_support_pt_combined, layer=layer)
-                _left_grating_tmp = gdspy.fast_boolean(_left_grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
-
-            if i == 0:
-                _left_grating = _left_grating_tmp
-            else:
-                _left_grating = gdspy.fast_boolean(_left_grating, _left_grating_tmp, 'or', max_points=0, layer=layer)
-
-            _radius_inner = _radius_outer + GRATING_LINE_WIDTH
-
-        _philist_frame = numpy.linspace(numpy.pi / 2.0 + GRATING_ANGLE, numpy.pi * 3.0 / 2.0 - GRATING_ANGLE,
-                                        NUM_CIRC_GRATING_POINTS - 1)
-        _grating_frame_pt = [
-            ((round((_tmp_beamdata.xpos - _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(
-                _radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-            (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH) \
-            for phi in _philist_frame]
-
-        _grating_frame_pt_combined = copy.copy(_ini_pt)
-        _grating_frame_pt_combined.extend(_grating_frame_pt)
-        _grating_frame_pt_combined.extend(_ini_pt)
-
-        _grating_frame = gdspy.Polygon(_grating_frame_pt_combined, layer=layer)
-
-        _left_grating = gdspy.fast_boolean(_left_grating, _grating_frame, 'and', max_points=0, layer=layer)
-
-        return _left_grating
-
-    @staticmethod
-    def write_right_circ_grating(beamdata, layer=5):
-
-        _philist_R = numpy.linspace(-1 * numpy.pi / 2.0, numpy.pi / 2.0, NUM_CIRC_GRATING_POINTS - 1)
-        _philist_R = numpy.append(_philist_R, -1 * numpy.pi / 2.0)
-        _tmp_beamdata = copy.copy(beamdata)
-        _ini_pt = [(_tmp_beamdata.xpos + _tmp_beamdata.dx / 2, _tmp_beamdata.ypos)]
-
-        _radius_inner = CIRC_GRATING_BASE
-
-        for i in range(NUM_GRATING + 1):
-            _right_grating_inner = gdspy.Polygon(
+            grating_outer = gdspy.Polygon(
                 [
-                    ((round((_tmp_beamdata.xpos + _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(_radius_inner * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-                    (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_inner * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH) for phi in _philist_R
+                    (
+                        (round((_tmp_beamdata.xpos + (direction_mult * _tmp_beamdata.dx / 2)) / SHOT_PITCH) + round(_radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
+                        (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH
+                    )
+                    for phi in phi_list
                 ],
                 layer=layer
             )
-            _radius_outer = _radius_inner + GRATING_SPACING
-            _right_grating_outer = gdspy.Polygon(
-                [
-                    ((round((_tmp_beamdata.xpos + _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(_radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-                    (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH) for phi in _philist_R
-                ],
-                layer=layer
+            grating_tmp = gdspy.fast_boolean(grating_outer, grating_inner, 'not', max_points=0, layer=layer)
+            _radius_outer = _radius_outer + 10
+            support_angle = ODD_SUPPORT_ANGLE if (i % 2 == 0) else EVEN_SUPPORT_ANGLE  # this is stupid
+            _philist_support = numpy.linspace(
+                -1 * direction_mult * numpy.pi / 2.0 + support_angle - SUPPORT_ANGLE_WIDTH / 2.0,
+                -1 * direction_mult * numpy.pi / 2.0 + support_angle + SUPPORT_ANGLE_WIDTH / 2.0,
+                NUM_CIRC_GRATING_POINTS - 1
             )
-            _right_grating_tmp = gdspy.fast_boolean(_right_grating_outer, _right_grating_inner, 'not', max_points=0, layer=layer)
-            if (i % 2 == 0):
-                _radius_outer = _radius_outer + 10
+            _support_pt = [
+                (
+                    (round((_tmp_beamdata.xpos + (direction_mult *_tmp_beamdata.dx / 2)) / SHOT_PITCH) + round(_radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
+                    (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH
+                )
+                for phi in _philist_support
+            ]
+            _support_pt_combined = copy.copy(_ini_pt)
+            _support_pt_combined.extend(_support_pt)
+            _support_pt_combined.extend(_ini_pt)
+            _support_frame = gdspy.Polygon(_support_pt_combined, layer=layer)
+            grating_tmp = gdspy.fast_boolean(grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
+            if (i % 2 == 0):  # even
                 _philist_support = numpy.linspace(
-                    -1 * numpy.pi / 2.0 + ODD_SUPPORT_ANGLE - SUPPORT_ANGLE_WIDTH / 2.0,
-                    -1 * numpy.pi / 2.0 + ODD_SUPPORT_ANGLE + SUPPORT_ANGLE_WIDTH / 2.0,
+                    some_angle / 2.0 - ODD_SUPPORT_ANGLE - SUPPORT_ANGLE_WIDTH / 2.0,
+                    some_angle / 2.0 - ODD_SUPPORT_ANGLE + SUPPORT_ANGLE_WIDTH / 2.0,
                     NUM_CIRC_GRATING_POINTS - 1
                 )
                 _support_pt = [
-                    ((round((_tmp_beamdata.xpos + _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(_radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH, 
-                    (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH) 
+                    (
+                        (round((_tmp_beamdata.xpos + (direction_mult * _tmp_beamdata.dx / 2)) / SHOT_PITCH) + round(_radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
+                        (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH
+                    )
                     for phi in _philist_support
                 ]
                 _support_pt_combined = copy.copy(_ini_pt)
                 _support_pt_combined.extend(_support_pt)
                 _support_pt_combined.extend(_ini_pt)
                 _support_frame = gdspy.Polygon(_support_pt_combined, layer=layer)
-                _right_grating_tmp = gdspy.fast_boolean(_right_grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
-
-                _philist_support = numpy.linspace(
-                    numpy.pi / 2.0 - ODD_SUPPORT_ANGLE - SUPPORT_ANGLE_WIDTH / 2.0,
-                    numpy.pi / 2.0 - ODD_SUPPORT_ANGLE + SUPPORT_ANGLE_WIDTH / 2.0,
-                    NUM_CIRC_GRATING_POINTS - 1
-                )
-                _support_pt = [
-                    ((round((_tmp_beamdata.xpos + _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(_radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-                    (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH)
-                    for phi in _philist_support
-                ]
-                _support_pt_combined = copy.copy(_ini_pt)
-                _support_pt_combined.extend(_support_pt)
-                _support_pt_combined.extend(_ini_pt)
-                _support_frame = gdspy.Polygon(_support_pt_combined, layer=layer)
-                _right_grating_tmp = gdspy.fast_boolean(_right_grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
+                grating_tmp = gdspy.fast_boolean(grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
+            if grating is None:
+                grating = grating_tmp
             else:
-                _radius_outer = _radius_outer + 10
-                _philist_support = numpy.linspace(
-                    -1 * numpy.pi / 2.0 + EVEN_SUPPORT_ANGLE - SUPPORT_ANGLE_WIDTH / 2.0,
-                    -1 * numpy.pi / 2.0 + EVEN_SUPPORT_ANGLE + SUPPORT_ANGLE_WIDTH / 2.0,
-                    NUM_CIRC_GRATING_POINTS - 1
-                )
-                _support_pt = [
-                    ((round((_tmp_beamdata.xpos + _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(_radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-                    (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH)
-                    for phi in _philist_support
-                ]
-                _support_pt_combined = copy.copy(_ini_pt)
-                _support_pt_combined.extend(_support_pt)
-                _support_pt_combined.extend(_ini_pt)
-                _support_frame = gdspy.Polygon(_support_pt_combined, layer=layer)
-                _right_grating_tmp = gdspy.fast_boolean(_right_grating_tmp, _support_frame, 'not', max_points=0, layer=layer)
-
-            if i == 0:
-                _right_grating = _right_grating_tmp
-            else:
-                _right_grating = gdspy.fast_boolean(_right_grating, _right_grating_tmp, 'or', max_points=0, layer=layer)
-
+                grating = gdspy.fast_boolean(grating, grating_tmp, 'or', max_points=0, layer=layer)
             _radius_inner = _radius_outer + GRATING_LINE_WIDTH
-
-        _philist_frame = numpy.linspace(-1 * numpy.pi / 2.0 + GRATING_ANGLE, numpy.pi / 2.0 - GRATING_ANGLE, NUM_CIRC_GRATING_POINTS - 1)
-        _grating_frame_pt = [
-            ((round((_tmp_beamdata.xpos + _tmp_beamdata.dx / 2) / SHOT_PITCH) + round(_radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-            (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH)
-            for phi in _philist_frame
-        ]
-
-        _grating_frame_pt_combined = copy.copy(_ini_pt)
-        _grating_frame_pt_combined.extend(_grating_frame_pt)
-        _grating_frame_pt_combined.extend(_ini_pt)
-
-        _grating_frame = gdspy.Polygon(_grating_frame_pt_combined, layer=layer)
-
-        _right_grating = gdspy.fast_boolean(_right_grating, _grating_frame, 'and', max_points=0, layer=layer)
-
-        return _right_grating
+            _philist_frame = numpy.linspace(-1 * direction_mult * numpy.pi / 2.0 + GRATING_ANGLE, some_angle / 2.0 - GRATING_ANGLE, NUM_CIRC_GRATING_POINTS - 1)
+            frame_pt = [
+                (
+                    (round((_tmp_beamdata.xpos + (direction_mult * _tmp_beamdata.dx / 2)) / SHOT_PITCH) + round(_radius_outer * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
+                    (round(_tmp_beamdata.ypos / SHOT_PITCH) + round(_radius_outer * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH
+                )
+                for phi in _philist_frame
+            ]
+        frame_pt_combined = copy.copy(_ini_pt)
+        frame_pt_combined.extend(frame_pt)
+        frame_pt_combined.extend(_ini_pt)
+        frame = gdspy.Polygon(frame_pt_combined, layer=layer)
+        grating = gdspy.fast_boolean(grating, frame, 'and', max_points=0, layer=layer)
+        return grating
 
     @classmethod
-    def write_circ_grating(cls, _circ_grating_combined, _tmp_beamdata, i, beamdata, beam_dy_list, circ_grating_support=None, layer=5):
+    def create_left_circ_grating(cls, beamdata, layer):
+        return cls.create_shockwaves(beamdata, is_left=True, layer=layer)
 
+    @classmethod
+    def create_right_circ_grating(cls, beamdata, layer):
+        return cls.create_shockwaves(beamdata, is_left=False, layer=layer)
+
+    @classmethod
+    def create_circ_grating(cls, _circ_grating_combined, _tmp_beamdata, i, beam_dy_list, layer=5):
         _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0
         _tmp_beamdata.dy = beam_dy_list[i]
 
-        _circ_grating_L = cls.write_left_circ_grating(_tmp_beamdata, layer=layer)
-        _circ_grating_R = cls.write_right_circ_grating(_tmp_beamdata, layer=layer)
-
+        _circ_grating_L = cls.create_left_circ_grating(_tmp_beamdata, layer=layer)
+        _circ_grating_R = cls.create_right_circ_grating(_tmp_beamdata, layer=layer)
         if i == 0:
             _circ_grating_combined = _circ_grating_L
             _circ_grating_combined = gdspy.fast_boolean(_circ_grating_combined, _circ_grating_R, 'or', max_points=0, layer=layer)
         else:
             _circ_grating_combined = gdspy.fast_boolean(_circ_grating_combined, _circ_grating_L, 'or', max_points=0, layer=layer)
             _circ_grating_combined = gdspy.fast_boolean(_circ_grating_combined, _circ_grating_R, 'or', max_points=0, layer=layer)
-
         _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0 + BEAM_SPACING
         return _circ_grating_combined
 
@@ -599,7 +543,7 @@ class Phc(Component):
             self.god_cell.add(phc_pos)
 
         if self.WRITE_PHC:
-            phc = self.PhC_Writer(params, end_period=self.END_PERIOD, blank_guides=self.NUM_GUIDES, create_label=self.TEXT)
+            phc = self.create_phc_group(params, end_period=self.END_PERIOD, blank_guides=self.NUM_GUIDES, create_label=self.TEXT)
             phc_pos = gdspy.CellReference(phc, (xpos, ypos - self.PHC_Y_OFFSET))
             self.god_cell.add(phc_pos)
 
@@ -617,7 +561,7 @@ class Phc(Component):
 
         # # Supports Mask
         if self.SUPPORTS_MASK_BOOL and row_i == 0 and col_i == 0:
-            self.supportsMask(name, xpos, ypos, SPACING)
+            self.supportsMask(name, SPACING)
 
     @cached_property
     def bounding_box_cell(self):
@@ -730,7 +674,7 @@ class Phc(Component):
                     (alignment_xpos - cls.MARK_LENGTH / 2.0, alignment_ypos + cls.MARK_THICKNESS / 2.0),
                     (alignment_xpos + cls.MARK_LENGTH / 2.0, alignment_ypos + cls.MARK_THICKNESS / 2.0),
                     (alignment_xpos + cls.MARK_LENGTH / 2.0, alignment_ypos - cls.MARK_THICKNESS / 2.0),
-                    (alignment_xpos - cls.MARK_LENGTH / 2.0, alignment_ypos - cls.MARK_THICKNESS / 2.0)
+                    (alignment_xpos - cls.MARK_LENGTH / 2.0, alignment_ypos - cls.MARK_THICKNESS / 2.0),
                 ], 
                 layer=layer
             )
@@ -742,7 +686,7 @@ class Phc(Component):
                     (alignment_xpos - cls.MARK_THICKNESS / 2.0, alignment_ypos + cls.MARK_LENGTH / 2.0),
                     (alignment_xpos + cls.MARK_THICKNESS / 2.0, alignment_ypos + cls.MARK_LENGTH / 2.0),
                     (alignment_xpos + cls.MARK_THICKNESS / 2.0, alignment_ypos - cls.MARK_LENGTH / 2.0),
-                    (alignment_xpos - cls.MARK_THICKNESS / 2.0, alignment_ypos - cls.MARK_LENGTH / 2.0)
+                    (alignment_xpos - cls.MARK_THICKNESS / 2.0, alignment_ypos - cls.MARK_LENGTH / 2.0),
                 ], 
                 layer=layer
             )
@@ -764,10 +708,44 @@ class Phc(Component):
     EDGE_UNDERDOSE = False
 
     @classmethod
+    def get_grating_couplers(cls, beam_position, beam_dy_list):
+        beam_position = copy.copy(beam_position)
+        beam_position.ypos = beam_position.ypos - beam_dy_list[0] / 2.0
+        grating_couplers = []
+        for i in range(PHC_GROUP_COUNT):
+            beam_position.ypos = beam_position.ypos + beam_dy_list[i] / 2.0
+            beam_position.dy = beam_dy_list[i]
+            grating_couplers.append(
+                GratingCoupler(
+                    beam_position=beam_position,
+                    layer=5,
+                )
+            )
+            beam_position.ypos = beam_position.ypos + beam_dy_list[i] / 2.0 + BEAM_SPACING
+        return grating_couplers
+
+    @classmethod
+    def get_box_write_area(cls, _outer_box, _tmp_beam_polygon_combined, layer, write_linker, circ_grating, pattern_number, beamdata, _xmin, _xmax, _ymin, _ymax, round_corner, beam_dy_list, cell):
+        _box_write_area = gdspy.fast_boolean(_outer_box, _tmp_beam_polygon_combined, 'not', max_points=0, layer=layer)
+        if write_linker:
+            _linker_combined = cls.write_linker_region(beamdata, _xmin, _xmax, _ymin, _ymax, round_corner, layer=layer)
+            _box_write_area = gdspy.fast_boolean(_box_write_area, _linker_combined, 'not', max_points=0, layer=layer)
+        if circ_grating:
+            grating_couplers = cls.get_grating_couplers(beamdata, beam_dy_list)
+            all_grating_coupler_geometry = Polygon.fast_combine(*([gc.left_shockwave for gc in grating_couplers] + [gc.right_shockwave for gc in grating_couplers]), layer=layer)
+            _box_write_area = gdspy.fast_boolean(_box_write_area, all_grating_coupler_geometry, 'or', max_points=0, layer=layer)
+        if pattern_number is not None:
+            _left_pattern_number = create_phc_label(cell, _xmin + LINKER_EDGE_OFFSET + LINKER_WIDTH / 2.0, _ymax - LINKER_EDGE_OFFSET - cls.TEXT_DIST_TO_TOP, pattern_number)
+            _right_pattern_number = create_phc_label(cell, _xmax - LINKER_EDGE_OFFSET - LINKER_WIDTH / 2.0, _ymax - LINKER_EDGE_OFFSET - cls.TEXT_DIST_TO_TOP, pattern_number)
+            _pattern_number_combined = gdspy.fast_boolean(_left_pattern_number, _right_pattern_number, 'or', max_points=0, layer=layer)
+            _box_write_area = gdspy.fast_boolean(_box_write_area, _pattern_number_combined, 'xor', max_points=0, layer=layer)
+        return _box_write_area
+
+    @classmethod
     def write_outer_box(
             cls, cell, beamdata, beam_dy_list, grating_spacer=False, round_corner=False, direct_write_area=False, alignment_mark=False,
             write_linker=False, pinch_pt_L=False, pinch_pt_R=False, pinch_pt_L_offset=0, pinch_pt_R_offset=0, pinch_pt_size=0, 
-            circ_grating=False, grating_support_size=None, pattern_number=None, reverse_tone=False, layer=3
+            circ_grating=False, pattern_number=None, reverse_tone=False, layer=3
         ):
         _xmin = beamdata.xpos - beamdata.dx / 2.0 - int(write_linker) * (LINKER_WIDTH + LINKER_EDGE_OFFSET)
         _xmax = beamdata.xpos + beamdata.dx / 2.0 + int(write_linker) * (LINKER_WIDTH + LINKER_EDGE_OFFSET)
@@ -780,12 +758,25 @@ class Phc(Component):
         if direct_write_area is True:
             _tmp_beamdata = copy.copy(beamdata)
             _tmp_beamdata.ypos = _tmp_beamdata.ypos - beam_dy_list[0] / 2.0
-            for i in range(PHC_GROUP_COUNT):
+            for i in range(PHC_GROUP_COUNT - 5):
                 _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0
                 if cls.EDGE_UNDERDOSE and not reverse_tone:
                     _tmp_beamdata.dy = beam_dy_list[i] + UNDER_EDGE_SIZE * 2
                 else:
                     _tmp_beamdata.dy = beam_dy_list[i]
+
+                beam = NanoBeam(
+                    [
+                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
+                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos + _tmp_beamdata.dy / 2.0),
+                        (_tmp_beamdata.xpos + _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos + _tmp_beamdata.dy / 2.0),
+                        (_tmp_beamdata.xpos + _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
+                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
+                    ], 
+                    layer=layer
+                )
+                
+
 
                 _tmp_beam_polygon = gdspy.Polygon(
                     [
@@ -793,7 +784,7 @@ class Phc(Component):
                         (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos + _tmp_beamdata.dy / 2.0),
                         (_tmp_beamdata.xpos + _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos + _tmp_beamdata.dy / 2.0),
                         (_tmp_beamdata.xpos + _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
-                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0)
+                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
                     ], 
                     layer=layer
                 )
@@ -818,44 +809,20 @@ class Phc(Component):
                     _tmp_beam_polygon_combined = _tmp_beam_polygon
                 else:
                     _tmp_beam_polygon_combined = gdspy.fast_boolean(_tmp_beam_polygon_combined, _tmp_beam_polygon, 'or', max_points=0, layer=layer)
+            _box_write_area = cls.get_box_write_area(_outer_box, _tmp_beam_polygon_combined, layer, write_linker, circ_grating, pattern_number, beamdata, _xmin, _xmax, _ymin, _ymax, round_corner, beam_dy_list, cell)
 
-            _box_write_area = gdspy.fast_boolean(_outer_box, _tmp_beam_polygon_combined, 'not', max_points=0, layer=layer)
-            if write_linker:
-                _linker_combined = cls.write_linker_region(beamdata, _xmin, _xmax, _ymin, _ymax, round_corner, layer=layer)
-                _box_write_area = gdspy.fast_boolean(_box_write_area, _linker_combined, 'not', max_points=0, layer=layer)
-            if circ_grating:
-                _tmp_beamdata = copy.copy(beamdata)
-                _tmp_beamdata.ypos = _tmp_beamdata.ypos - beam_dy_list[0] / 2.0
-                _circ_grating_combined = None
-                for i in range(PHC_GROUP_COUNT - 4):
-                    _circ_grating_combined = GratingCoupler.write_circ_grating(
-                        _circ_grating_combined = _circ_grating_combined,
-                        _tmp_beamdata          = _tmp_beamdata, 
-                        i                      = i, 
-                        beamdata               = beamdata, 
-                        beam_dy_list           = beam_dy_list, 
-                        circ_grating_support   = grating_support_size, 
-                        layer                  = 5,
-                    )
-                _box_write_area = gdspy.fast_boolean(_box_write_area, _circ_grating_combined, 'or', max_points=0, layer=layer)
-            if pattern_number is not None:
-                _left_pattern_number = create_phc_label(cell, _xmin + LINKER_EDGE_OFFSET + LINKER_WIDTH / 2.0, _ymax - LINKER_EDGE_OFFSET - cls.TEXT_DIST_TO_TOP, pattern_number)
-                _right_pattern_number = create_phc_label(cell, _xmax - LINKER_EDGE_OFFSET - LINKER_WIDTH / 2.0, _ymax - LINKER_EDGE_OFFSET - cls.TEXT_DIST_TO_TOP, pattern_number)
-                _pattern_number_combined = gdspy.fast_boolean(_left_pattern_number, _right_pattern_number, 'or', max_points=0, layer=layer)
-                _box_write_area = gdspy.fast_boolean(_box_write_area, _pattern_number_combined, 'xor', max_points=0, layer=layer)
-
-        rough = gdspy.Rectangle(
-            (beamdata.xpos - beamdata.dx / 2, beamdata.ypos - EDGE_OFFSET - beamdata.dy / 2), 
-            (beamdata.xpos - beamdata.dx / 2 + SPACER, beamdata.ypos + EDGE_OFFSET + beamdata.dy / 2),
-            layer=layer
-        )
-        rough2 = gdspy.Rectangle(
-            (beamdata.xpos + beamdata.dx / 2, beamdata.ypos - EDGE_OFFSET - beamdata.dy / 2),
-            (beamdata.xpos + beamdata.dx / 2 - SPACER, beamdata.ypos + EDGE_OFFSET + beamdata.dy / 2),
-            layer=layer
-        )
-        rough2 = gdspy.fast_boolean(rough2, _tmp_beam_polygon_combined, 'not', max_points=0, layer=layer)
-        rough = gdspy.fast_boolean(rough, _tmp_beam_polygon_combined, 'not', max_points=0, layer=layer)
+            rough = gdspy.Rectangle(
+                (beamdata.xpos - beamdata.dx / 2, beamdata.ypos - EDGE_OFFSET - beamdata.dy / 2), 
+                (beamdata.xpos - beamdata.dx / 2 + SPACER, beamdata.ypos + EDGE_OFFSET + beamdata.dy / 2),
+                layer=layer
+            )
+            rough2 = gdspy.Rectangle(
+                (beamdata.xpos + beamdata.dx / 2, beamdata.ypos - EDGE_OFFSET - beamdata.dy / 2),
+                (beamdata.xpos + beamdata.dx / 2 - SPACER, beamdata.ypos + EDGE_OFFSET + beamdata.dy / 2),
+                layer=layer
+            )
+            rough2 = gdspy.fast_boolean(rough2, _tmp_beam_polygon_combined, 'not', max_points=0, layer=layer)
+            rough = gdspy.fast_boolean(rough, _tmp_beam_polygon_combined, 'not', max_points=0, layer=layer)
 
         if reverse_tone:
             _box_write_area = gdspy.fast_boolean(_box_write_area, _tmp_beam_polygon_combined, 'or', max_points=0, layer=layer)
@@ -900,7 +867,7 @@ class Phc(Component):
     # Underdose Regions
     RING_UNDERDOSE = False
 
-    def PhC_Writer(self, param_sweep, end_period, blank_guides, create_label=True):
+    def create_phc_group(self, param_sweep, end_period, blank_guides, create_label=True):
 
         acav = param_sweep[1][0]
         amir = param_sweep[1][1]
@@ -921,13 +888,12 @@ class Phc(Component):
         _tmp_beamdata = copy.copy(beamdata_rowicolj)
         _tmp_beamdata.ypos = _tmp_beamdata.ypos - beam_dy_list[0] / 2.0
 
-        for i in range(PHC_GROUP_COUNT - 6):
-            NanoBeam.write_multiple_hole(
+        for i in range(PHC_GROUP_COUNT):
+            NanoBeam.create_nano_beam(
                 i              = i,
                 _initial_ypos  = _initial_ypos,
                 _tmp_beamdata  = _tmp_beamdata,
                 cell           = beams, 
-                beamdata       = beamdata_rowicolj, 
                 holedata       = holedata_circ_rowicolj, 
                 beam_dy_list   = beam_dy_list, 
                 num_cav_hole   = num_cav,
@@ -947,6 +913,9 @@ class Phc(Component):
                 edge_underdose = self.RING_UNDERDOSE
             )
 
+        direct_write_area = True
+        circ_grating = True
+
         outer_box = self.write_outer_box(
             cell                 = beams,  # this cell seems to have all of the grating coupler references and the bounding box
             # gdspy.Cell(f"temptemptemp-{param_sweep[0]}"), 
@@ -954,7 +923,7 @@ class Phc(Component):
             beam_dy_list         = beam_dy_list, 
             grating_spacer       = self.GRATING_SPACER, 
             round_corner         = False, 
-            direct_write_area    = True, 
+            direct_write_area    = direct_write_area, 
             alignment_mark       = False,
             write_linker         = True, 
             pinch_pt_L           = False, 
@@ -962,15 +931,14 @@ class Phc(Component):
             pinch_pt_L_offset    = 0, 
             pinch_pt_R_offset    = 0, 
             pinch_pt_size        = 0, 
-            circ_grating         = True, 
-            grating_support_size = None, 
+            circ_grating         = circ_grating, 
             pattern_number       = None, 
             reverse_tone         = self.REVERSE_TONE, 
             layer                = 3
         )
 
-        SupportStructure.write_outer_frame(
-            beams, 
+        SupportStructure.create_outer_frame_with_supports(
+            beams,
             beamdata_rowicolj, 
             beam_dy_list,
             outer_box.get_bounding_box(), 
@@ -979,10 +947,7 @@ class Phc(Component):
         )
         return beams
 
-    def supportsMask(self, name, xpos, ypos, spacing):
-        x_frame = WRITE_FIELD_X_SIZE / 2 * 0.9
-        y_frame = WRITE_FIELD_Y_SIZE / 2 * 0.9
-
+    def supportsMask(self, name, spacing):
         x_frame = spacing*6 * Unit.um.value /2
         y_frame = ((LINKER_WIDTH/1e3)*2+self.WY_LIST[0]/1e3) * Unit.um.value * 12/2
 

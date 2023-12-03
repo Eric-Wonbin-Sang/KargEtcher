@@ -12,12 +12,15 @@ from classes.random_constants import (BEAM_SPACING, CORNER_BEND_PTS,
                                       CORNER_BEND_RAD, DEVICE_COL_COUNT,
                                       DEVICE_ROW_COUNT, EDGE_OFFSET,
                                       LINKER_EDGE_OFFSET, LINKER_WIDTH,
-                                      NUM_X_SUPPORT, NUM_Y_SUPPORT, PAIRS,
-                                      PHC_GROUP_COUNT, SPACING, SPACING_Y,
-                                      SUPPORT_BEAM_SIZE,
-                                      SUPPORT_CONNECTOR_WIDTH,
-                                      SUPPORT_NOTCH_SIZE, WRITE_FIELD_X_SIZE,
-                                      WRITE_FIELD_Y_SIZE)
+                                      PAIRS, PHC_GROUP_COUNT, SPACING, SPACING_Y,
+                                      WRITE_FIELD_X_SIZE, WRITE_FIELD_Y_SIZE)
+
+# Parameter for the support
+SUPPORT_CONNECTOR_WIDTH = 1e3 #0.000001e3
+SUPPORT_NOTCH_SIZE = 400
+SUPPORT_BEAM_SIZE = 1e3
+NUM_X_SUPPORT = 2
+NUM_Y_SUPPORT = 10
 
 
 class PhcGroup:
@@ -171,18 +174,22 @@ class SupportStructure:
     TEXT_HEIGHT = 8e3
 
     @classmethod
-    def write_outer_frame(cls, cell, beamdata, beam_dy_list, outer_box_bounding_box, pattern_number=None, reverse_tone=False, layer=3):
+    def create_outer_frame_with_supports(cls, cell, beamdata, beam_dy_list, outer_box_bounding_box, pattern_number=None, reverse_tone=False, layer=3):
 
         _ymin = beamdata.ypos - beam_dy_list[0] / 2.0 - EDGE_OFFSET
         _ymax = _ymin + (PHC_GROUP_COUNT - 1) * BEAM_SPACING + numpy.sum(beam_dy_list) + EDGE_OFFSET * 2
         _tmp_beamdata = copy.copy(beamdata)
-        _support_inner = cls.PLTdata(xpos=_tmp_beamdata.xpos, ypos=(_ymin + _ymax) / 2.0, dx=beamdata.dx + 2 * LINKER_WIDTH + 2 * LINKER_EDGE_OFFSET, dy=_ymax - _ymin)
+        _support_inner = cls.PLTdata(
+            xpos=_tmp_beamdata.xpos, 
+            ypos=(_ymin + _ymax) / 2.0, 
+            dx=beamdata.dx + 2 * LINKER_WIDTH + 2 * LINKER_EDGE_OFFSET, 
+            dy=_ymax - _ymin
+        )
 
         _frame_write_area = cls.write_support_region(_support_inner, layer)
 
         if pattern_number is not None:
             _pattern_number_to_write = create_phc_label(pattern_number, cls.TEXT_HEIGHT, (_support_inner.xpos-8e3, _support_inner.ypos + _support_inner.dy / 2.0 + 2.5e3))
-            # create_phc_label(pattern_number, size=textheight, position=(xloc, yloc), font_prop=None, tolerance=0.1):
             _frame_write_area = gdspy.fast_boolean(_frame_write_area, _pattern_number_to_write, 'not', max_points=0, layer=layer)
 
         if not reverse_tone:

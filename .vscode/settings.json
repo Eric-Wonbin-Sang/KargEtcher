@@ -1,0 +1,7 @@
+{
+    "editor.fontFamily": "fira-code-nerd",
+    "debug.console.fontFamily": "fira-code-nerd",
+    "chat.editor.fontFamily": "fira-code-nerd",
+    "editor.inlayHints.fontFamily": "fira-code-nerd",
+    "editor.codeLensFontFamily": "fira-code-nerd"
+}

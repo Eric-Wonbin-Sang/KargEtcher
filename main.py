@@ -122,8 +122,10 @@ class PhcGenerator:
 
         device_id = 0
         phcs = []
-        for row_i in range(DEVICE_ROW_COUNT):
-            for col_i in range(DEVICE_COL_COUNT):
+        for col_i in range(DEVICE_COL_COUNT):
+            if col_i == 2:
+                return phcs
+            for row_i in range(DEVICE_ROW_COUNT):
                 phcs.append(
                     Phc(
                         device_id=device_id,
@@ -133,11 +135,10 @@ class PhcGenerator:
                             width=60 * Unit.um.value, 
                             height= 30 * Unit.um.value
                         ),
-                        grating_coupler=GratingCoupler(),
+                        grating_coupler=None,  # GratingCoupler()
                     )
                 )
                 device_id += 1
-            return phcs
         return phcs
 
 
