@@ -67,8 +67,6 @@ def create_plot(mpl_polygons):
     plt.show()
 
 
-
-
 def main():
     gds_filename = r"C:\LocalCodingProjects\KargEtcher\2023-11-18-M12.gds"
     gds_file = gdspy.GdsLibrary().read_gds(gds_filename)

@@ -1,6 +1,6 @@
 # ignore these filetypes
 *.cpython
-*.cpython
+*.pyc
 
 # ignore these dirs
 .venv/
