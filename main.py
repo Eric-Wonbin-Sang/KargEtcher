@@ -6,7 +6,9 @@ import gdspy
 from classes.generic import logger, Component, config_dataclass
 import numpy
 
-from classes.photonic_components import WorkArea, Unit, Hole, NanoBeam, GratingCoupler, Phc, logger
+from classes.generic import Unit, logger
+from classes.photonic_components import Unit, Hole, NanoBeam, GratingCoupler, Phc
+from classes.layout_management import WorkArea
 
 
 class PhcGenerator:
