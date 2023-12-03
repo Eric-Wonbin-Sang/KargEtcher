@@ -104,13 +104,16 @@ class PolygonMixin:
         return self.bounding_box[1][1]
     
     @staticmethod
-    def fast_combine(*polygons, layer):
+    def combine(*polygons, layer):
         """ A standard way to combine multiple polygons. """
+        logger.info("Combining:")
         if len(polygons) < 2:
             return next(polygons, None)
         result, *remaining = polygons
+        logger.info(f" - full_geometry = {result}")
         for p in remaining:
-            result = gdspy.fast_boolean(result, p, 'or', max_points=0, layer=layer)
+            logger.info(f" - full_geometry += {p}")
+            result = gdspy.boolean(result, p, 'or', max_points=0, layer=layer)
         return result
 
 
@@ -120,19 +123,19 @@ class Rectangle(gdspy.Rectangle, PolygonMixin):
     
     """
     
-    def __init__(self, width, height, layer=0, datatype=0, center_to_origin=True):
+    def __init__(self, width, height, layer=0, datatype=0, center_to=(0, 0)):
         self.width = width
         self.height = height
-        self.center_to_origin = center_to_origin
+        self.center_to = center_to
         super().__init__(self.top_left_coords, self.bot_right_coords, layer=layer, datatype=datatype)
 
     @cached_property
     def top_left_coords(self):
-        return (-self.width/2, self.height/2) if self.center_to_origin else (0, self.height)
+        return (self.center_to[0] - self.width/2, self.center_to[1] + self.height/2) if self.center_to else (0, self.height)
     
     @cached_property
     def bot_right_coords(self):
-        return (self.width/2, -self.height/2) if self.center_to_origin else (self.width, 0)
+        return (self.center_to[0] + self.width/2, self.center_to[1] - self.height/2) if self.center_to else (self.width, 0)
     
 
 class Square(Rectangle):
@@ -141,8 +144,9 @@ class Square(Rectangle):
     
     """
     
-    def __init__(self, side_length, layer=0, center_to_origin=True):
-        super().__init__(side_length, side_length, layer, center_to_origin)
+    def __init__(self, side_length, layer=0, center_to=(0, 0)):
+        super().__init__(width=side_length, height=side_length, layer=layer, datatype=0, center_to=center_to)
+
 
 
 class Polygon(gdspy.Polygon, PolygonMixin):

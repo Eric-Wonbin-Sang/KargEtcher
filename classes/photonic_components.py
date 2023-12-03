@@ -1,4 +1,5 @@
 import copy
+import enum
 import math
 from dataclasses import dataclass
 from functools import cached_property
@@ -7,7 +8,7 @@ import gdspy
 import numpy
 
 from classes.generic import (Component, Polygon, Rectangle, Unit, better_dataclass,
-                             create_phc_label, linker_polygon,
+                             create_phc_label, linker_polygon, logger,
                              pinch_pt_polygon, pinch_pt_polygon_vertical)
 from classes.layout_management import SupportStructure
 from classes.random_constants import (BEAM_SPACING, CORNER_BEND_PTS,
@@ -61,7 +62,7 @@ EVEN_SUPPORT_ANGLE = numpy.pi / 2.0  # 90 degree in radian
 SUPPORT_ANGLE_WIDTH = 2.3 * numpy.pi / 180  # 10 degree in radian
 
 
-class Hole:
+class Hole(Polygon):
     
     @better_dataclass
     class Config:
@@ -80,8 +81,32 @@ class Hole:
 
     """
 
+    def __init__(self, position, layer=0, datatype=0):
+        
+        self.center_x = position.xpos
+        self.center_y = position.ypos
+        self.width = position.dx
+        self.height = position.dy
 
-class NanoBeam(Polygon):
+        self.point_count = NUM_CIRC_POINTS
+
+        super().__init__(self._get_points(), layer, datatype)
+
+    def _get_points(self):
+        logger.info(f"Creating hole at ({self.center_x}, {self.center_y})")
+        points = []
+        for i, phi in enumerate(numpy.linspace(0, 2 * numpy.pi, self.point_count)):
+            points.append(
+                (
+                    (round(self.center_x / SHOT_PITCH) + round(self.width / 2 * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
+                    (round(self.center_y / SHOT_PITCH) + round(self.height / 2 * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH
+                )
+            )
+            logger.info(f"    {str(i).rjust(len(str(self.point_count)))}/{self.point_count}: {points[-1]}")
+        return points
+
+
+class NanoBeam:
 
     """
     The area that houses the holes.
@@ -95,19 +120,121 @@ class NanoBeam(Polygon):
         width_variations  : float  # previously wy_list
         height_variations : float  # previously 
 
+    DO_CUSTOM_CAVITY = True
+    SEGMENTS = numpy.array([1.57385141e-07, 1.58156287e-07, 1.59014195e-07, 1.59789244e-07, 1.61512865e-07, 1.63789232e-07, 1.65369591e-07, 1.67000125e-07]) * 1e9
+    CUSTOM_CAVITY_LIST = numpy.append(numpy.flip(SEGMENTS), SEGMENTS)
 
-    def __init__(self, points, layer=0, datatype=0):
-        super().__init__(points, layer, datatype)
+    UNDER_RING_SIZE = 12
+    OVER_RING_SIZE = 12
+    OVER_EDGE_SIZE = 12
+
+    def __init__(
+            self, beam_position, cell, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, amir,
+            end_period, do_guide, end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, beam_overdose=False,
+            hole_overdose=False, hole_underdose=True, beam_underdose=True
+        ):
+
+        if do_guide:
+            cell.add(self.get_blank_beam(beam_position, layer=2))
+        else:
+            holes = self.get_holes(amir, acav, num_cav_hole, end_taper_L, end_taper_R, num_end_taper, end_period, num_mir_hole_L, num_mir_hole_R, holedata)
+            holes = Polygon.combine(*holes, layer=2)
+            if reverse_tone:
+                beam = self.get_blank_beam(beam_position, layer=2)
+                holes = gdspy.fast_boolean(beam, holes, 'not', max_points=0, layer=2)
+
+            if hole_overdose or beam_overdose:
+                if reverse_tone:
+                    self.create_overdose(
+                        hole_overdose, beam_overdose, holedata, beam_position, cell, num_cav_hole, num_mir_hole_L, 
+                        num_mir_hole_R, acav, amir, end_period, end_taper_L, end_taper_R, num_end_taper, holes
+                    )
+                    
+            elif hole_underdose or beam_underdose:
+                if not reverse_tone:
+                    self.create_underdose(
+                        hole_underdose, beam_underdose, holedata, beam_position, cell, num_cav_hole, num_mir_hole_L, 
+                        num_mir_hole_R, acav, amir, end_period, end_taper_L, end_taper_R, num_end_taper, holes
+                    )
+            else:
+                cell.add(holes)
+
+    @classmethod
+    def get_blank_beam(cls, beam_position, layer):
+        return Rectangle(width=beam_position.dx, height=beam_position.dy, center_to=(beam_position.xpos, beam_position.ypos), layer=layer)
+
+    def create_overdose(
+            self, ring_overdose, edge_overdose, holedata, beam_position, cell, num_cav_hole, num_mir_hole_L, 
+            num_mir_hole_R, acav, amir, end_period, end_taper_L, end_taper_R, num_end_taper, ord_holes
+        ):
+        logger.info("Creating overdose")
+        holedata.dx = holedata.dx + self.OVER_RING_SIZE * ring_overdose * 2
+        holedata.dy = holedata.dy + self.OVER_RING_SIZE * ring_overdose * 2
+        beam_position.dy = beam_position.dy - self.OVER_EDGE_SIZE * 2 * edge_overdose
+
+        overdose_holes = self.get_holes(amir, acav, num_cav_hole, end_taper_L, end_taper_R, num_end_taper, end_period, num_mir_hole_L, num_mir_hole_R, holedata)
+        overdose_holes = Polygon.combine(*overdose_holes, layer=2)
+        _tmp_beam_polygon = self.get_blank_beam(beam_position, layer=2)
+        overdose_holes = gdspy.fast_boolean(_tmp_beam_polygon, overdose_holes, 'not', max_points=0, layer=2)
+
+        region = gdspy.fast_boolean(ord_holes, overdose_holes, 'not', max_points=0, layer=11)
+        cell.add(region)
+        cell.add(overdose_holes)
+        holedata.dx = holedata.dx - self.OVER_RING_SIZE * ring_overdose * 2
+        holedata.dy = holedata.dy - self.OVER_RING_SIZE * ring_overdose * 2
+
+    def create_underdose(
+            self, hole_underdose, beam_underdose, holedata, beam_position, cell, num_cav_hole, num_mir_hole_L, 
+            num_mir_hole_R, acav, amir, end_period, end_taper_L, end_taper_R, num_end_taper, ord_holes
+        ):
+        logger.info("Creating underdose")
+        # ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+        ref_ord_edge = self.get_holes(amir, acav, num_cav_hole, end_taper_L, end_taper_R, num_end_taper, end_period, num_mir_hole_L, num_mir_hole_R, holedata)
+        ref_ord_edge = Polygon.combine(*ref_ord_edge, layer=2)
+
+        holedata.dx = holedata.dx - self.UNDER_RING_SIZE * hole_underdose
+        holedata.dy = holedata.dy - self.UNDER_RING_SIZE * hole_underdose
+        beam_position.dy = beam_position.dy + UNDER_EDGE_SIZE * 2 * beam_underdose
+
+        # ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+        underdose_holes = self.get_holes(amir, acav, num_cav_hole, end_taper_L, end_taper_R, num_end_taper, end_period, num_mir_hole_L, num_mir_hole_R, holedata)
+        underdose_holes = Polygon.combine(*underdose_holes, layer=2)
+
+        beam_position.dx = beam_position.dx - SPACER * 2
+        
+        # ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+        underdose_edge = self.get_holes(amir, acav, num_cav_hole, end_taper_L, end_taper_R, num_end_taper, end_period, num_mir_hole_L, num_mir_hole_R, holedata)
+        underdose_edge = Polygon.combine(*underdose_edge, layer=2)
+
+        region = gdspy.fast_boolean(ord_holes, underdose_holes, 'not', max_points=0, layer=12)
+        region2 = gdspy.fast_boolean(underdose_edge, ref_ord_edge, 'not', max_points=0, layer=12)
+        # underdose_holes = gdspy.fast_boolean(underdose_edge, region2, 'not', max_points=0, layer=12)
+        cell.add(underdose_holes)
+        cell.add(region)
+        cell.add(region2)
 
     @staticmethod
-    def write_beam_single(cell, pltdata, layer=1):
-        cell.add(gdspy.Polygon([
-            (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0),
-            (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos + pltdata.dy / 2.0),
-            (pltdata.xpos + pltdata.dx / 2.0, pltdata.ypos + pltdata.dy / 2.0),
-            (pltdata.xpos + pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0),
-            (pltdata.xpos - pltdata.dx / 2.0, pltdata.ypos - pltdata.dy / 2.0)
-        ], layer=layer))
+    def get_weirdly_unused_polygon(points, beam_position, pinch_pt_L, pinch_pt_R, pinch_pt_size, pinch_pt_L_offset, pinch_pt_R_offset, layer=0):
+        """ Not sure what this is supposed to do. TODO """
+        polygon = Polygon(points, layer=layer)
+    
+        if pinch_pt_L:
+            _tmp_upper_triangle, _tmp_lower_triangle = pinch_pt_polygon(
+                beam_position.dy, pinch_pt_size, 
+                beam_position.xpos - beam_position.dx / 2.0 + pinch_pt_L_offset, beam_position.ypos, layer
+            )
+            polygon = gdspy.fast_boolean(polygon, _tmp_upper_triangle, 'not', max_points=0, layer=layer)
+            polygon = gdspy.fast_boolean(polygon, _tmp_lower_triangle, 'not', max_points=0, layer=layer)
+        if pinch_pt_R:
+            _tmp_upper_triangle, _tmp_lower_triangle = pinch_pt_polygon(
+                beam_position.dy, pinch_pt_size, 
+                beam_position.xpos + beam_position.dx / 2.0 - pinch_pt_R_offset, 
+                beam_position.ypos, layer
+            )
+            polygon = gdspy.fast_boolean(polygon, _tmp_upper_triangle, 'not', max_points=0, layer=layer)
+            polygon = gdspy.fast_boolean(polygon, _tmp_lower_triangle, 'not', max_points=0, layer=layer)
+
+        return polygon
 
     @classmethod
     def exponential_cavity_period_list(cls, amir, acav, num_cav, exponent):
@@ -127,36 +254,23 @@ class NanoBeam(Polygon):
         taper_period_list = numpy.linspace(amir, end_period, num_end_taper + 1)
         return taper_period_list[1:]
 
-    @staticmethod
-    def write_hole_single(pltdata, layer=2):
-        _philist = numpy.linspace(0, 2 * numpy.pi, NUM_CIRC_POINTS)
-        _circ_pts = [
-            ((round(pltdata.xpos / SHOT_PITCH) + round(pltdata.dx / 2 * numpy.cos(phi) / SHOT_PITCH)) * SHOT_PITCH,
-            (round(pltdata.ypos / SHOT_PITCH) + round(pltdata.dy / 2 * numpy.sin(phi) / SHOT_PITCH)) * SHOT_PITCH)
-            for phi in _philist
-        ]
-        return gdspy.Polygon(_circ_pts, layer=layer)
-
-    DO_CUSTOM_CAVITY = True
-    SEGMENTS = numpy.array([1.57385141e-07, 1.58156287e-07, 1.59014195e-07, 1.59789244e-07, 1.61512865e-07, 1.63789232e-07, 1.65369591e-07, 1.67000125e-07]) * 1e9
-    CUSTOM_CAVITY_LIST = numpy.append(numpy.flip(SEGMENTS), SEGMENTS)
+    # def get_hold_params():
 
     @classmethod
-    def write_hole_1D(cls, cell, beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, amir, end_period,
-                    end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, layer=2):
-        n = 1.5  # Exponent for polynomial
+    def get_holes(cls, amir, acav, num_cav_hole, end_taper_L, end_taper_R, num_end_taper, end_period, num_mir_hole_L, num_mir_hole_R, holedata):
 
-        _one_side_holes = (num_cav_hole - 1) / 2.0
-        _idx_list = numpy.linspace(-_one_side_holes, _one_side_holes, int(num_cav_hole))
-        X1 = _idx_list[int(num_cav_hole / 2)]  # First Hole
-        XN = _idx_list[-1]  # Last Hole
-
-        _acav_list = cls.exponential_cavity_period_list(amir, acav, num_cav_hole, exponent=2)
+        # n = 1.5  # Exponent for polynomial
+        # _one_side_holes = (num_cav_hole - 1) / 2.0
+        # _idx_list = numpy.linspace(-_one_side_holes, _one_side_holes, int(num_cav_hole))
+        # X1 = _idx_list[int(num_cav_hole / 2)]  # First Hole
+        # XN = _idx_list[-1]  # Last Hole
 
         if cls.DO_CUSTOM_CAVITY:
             _acav_list = cls.CUSTOM_CAVITY_LIST
+        else:
+            _acav_list = cls.exponential_cavity_period_list(amir, acav, num_cav_hole, exponent=2)
 
-        if end_taper_L == True:
+        if end_taper_L:
             taper_periods = cls.get_tapers(num_end_taper, end_period, amir=amir)
 
         _amir_list_L = numpy.append(numpy.flipud(taper_periods), [amir] * int(num_mir_hole_L))
@@ -168,116 +282,33 @@ class NanoBeam(Polygon):
         _aper_list.extend(_acav_list)
         _aper_list.extend(_amir_list_R)
 
-        _hole_write = copy.copy(holedata)
-        _hole_write.xpos = _hole_write.xpos - numpy.sum(numpy.array(_acav_list)) / 2.0 - numpy.sum(
-            numpy.array(_amir_list_L))
-        _taper_scale_list = []
-        if num_end_taper > 0:
-            _taper_scale_list = numpy.linspace(0, 1.0, num_end_taper + 2)
-            _taper_scale_list_L = _taper_scale_list[1:-1]
-            _taper_scale_list_R = numpy.flipud(_taper_scale_list[1:-1])
+        curr_hole_position = copy.copy(holedata)
+        curr_hole_position.xpos = curr_hole_position.xpos - numpy.sum(numpy.array(_acav_list)) / 2.0 - numpy.sum(numpy.array(_amir_list_L))
+        # _taper_scale_list = []
+        # if num_end_taper > 0:
+        #     _taper_scale_list = numpy.linspace(0, 1.0, num_end_taper + 2)
+        #     _taper_scale_list_L = _taper_scale_list[1:-1]
+        #     _taper_scale_list_R = numpy.flipud(_taper_scale_list[1:-1])
 
-        for i in range(len(_aper_list)):
-            _hole_write.xpos = _hole_write.xpos + _aper_list[i] / 2.0
+        holes = []
+        for i, _aper in enumerate(_aper_list[:4]):
+
+            curr_hole_position.xpos = curr_hole_position.xpos + _aper / 2.0
+            
             if i < num_end_taper * end_taper_L:
-                _hole_write.dx = holedata.dx * 1
-                _hole_write.dy = holedata.dy * 1
+                curr_hole_position.dx = holedata.dx * 1
+                curr_hole_position.dy = holedata.dy * 1
             else:
-                _hole_write.dx = holedata.dx
-                _hole_write.dy = holedata.dy
+                curr_hole_position.dx = holedata.dx
+                curr_hole_position.dy = holedata.dy
             if i >= (len(_aper_list) - num_end_taper * end_taper_R):
-                _hole_write.dx = holedata.dx * 1
-                _hole_write.dy = holedata.dy * 1
-            _single_hole_polygon = cls.write_hole_single(_hole_write)
+                curr_hole_position.dx = holedata.dx * 1
+                curr_hole_position.dy = holedata.dy * 1
 
-            if i == 0:
-                _hole_polygon_combined = _single_hole_polygon
-            else:
-                _hole_polygon_combined = gdspy.fast_boolean(_hole_polygon_combined, _single_hole_polygon, 'or', max_points=0, layer=layer)
-            _hole_write.xpos = _hole_write.xpos + _aper_list[i] / 2.0
+            holes.append(Hole(curr_hole_position, layer=2))
 
-        if reverse_tone:
-            _tmp_beam_polygon = gdspy.Polygon(
-                [
-                    (beamdata.xpos - beamdata.dx / 2.0, beamdata.ypos - beamdata.dy / 2.0),
-                    (beamdata.xpos - beamdata.dx / 2.0, beamdata.ypos + beamdata.dy / 2.0),
-                    (beamdata.xpos + beamdata.dx / 2.0, beamdata.ypos + beamdata.dy / 2.0),
-                    (beamdata.xpos + beamdata.dx / 2.0, beamdata.ypos - beamdata.dy / 2.0),
-                    (beamdata.xpos - beamdata.dx / 2.0, beamdata.ypos - beamdata.dy / 2.0),
-                ],
-                layer=layer
-            )
-            _tmp_beam_polygon = gdspy.fast_boolean(_tmp_beam_polygon, _hole_polygon_combined, 'not', max_points=0, layer=layer)
-            send = _tmp_beam_polygon
-        else:
-            send = _hole_polygon_combined
-        return send
-
-    UNDER_RING_SIZE = 12
-    OVER_RING_SIZE = 12
-    OVER_EDGE_SIZE = 12
-
-    @classmethod
-    def create_nano_beam(
-            cls, i, _initial_ypos, _tmp_beamdata, cell, holedata, beam_dy_list, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, amir,
-            end_period, guides, end_taper_L=False, end_taper_R=False, num_end_taper=0, reverse_tone=False, edge_overdose=False,
-            ring_overdose=False, ring_underdose=True, edge_underdose=True
-        ):
-        """ (previously write_hole_2D). """
-        holedata.ypos = _initial_ypos + i * BEAM_SPACING + numpy.sum(beam_dy_list[:i]) + beam_dy_list[i] / 2.0
-        _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0
-        _tmp_beamdata.dy = beam_dy_list[i]
-
-        if guides == 1 and i == 0:
-            cls.write_beam_single(cell, _tmp_beamdata, layer=2)
-        elif guides == 2 and (i == 0 or i == (PHC_GROUP_COUNT-1)):
-            cls.write_beam_single(cell, _tmp_beamdata, layer=2)
-        else:
-            ord_holes = cls.write_hole_1D(
-                cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, 
-                amir, end_period, end_taper_L, end_taper_R, num_end_taper, reverse_tone=reverse_tone
-            )
-            if ring_overdose or edge_overdose is True:
-                if reverse_tone == True:
-                    holedata.dx = holedata.dx + cls.OVER_RING_SIZE * ring_overdose * 2
-                    holedata.dy = holedata.dy + cls.OVER_RING_SIZE * ring_overdose * 2
-                    _tmp_beamdata.dy = _tmp_beamdata.dy - cls.OVER_EDGE_SIZE * 2 * edge_overdose
-                    overdose_holes = cls.write_hole_1D(
-                        cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, 
-                        amir, end_period, end_taper_L, end_taper_R, num_end_taper, reverse_tone=reverse_tone
-                    )
-                    region = gdspy.fast_boolean(ord_holes, overdose_holes, 'not', max_points=0, layer=11)
-                    cell.add(region)
-                    cell.add(overdose_holes)
-                    holedata.dx = holedata.dx - cls.OVER_RING_SIZE * ring_overdose * 2
-                    holedata.dy = holedata.dy - cls.OVER_RING_SIZE * ring_overdose * 2
-            elif ring_underdose or edge_underdose is True:
-                if reverse_tone is False:
-                    ref_ord_edge = cls.write_hole_1D(
-                        cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, 
-                        amir, end_period, end_taper_L, end_taper_R, num_end_taper, reverse_tone=True
-                    )
-                    holedata.dx = holedata.dx - cls.UNDER_RING_SIZE * ring_underdose
-                    holedata.dy = holedata.dy - cls.UNDER_RING_SIZE * ring_underdose
-                    _tmp_beamdata.dy = _tmp_beamdata.dy + UNDER_EDGE_SIZE * 2 * edge_underdose
-                    underdose_holes = cls.write_hole_1D(
-                        cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav, 
-                        amir, end_period, end_taper_L, end_taper_R, num_end_taper, reverse_tone=reverse_tone
-                    )
-                    _tmp_beamdata.dx = _tmp_beamdata.dx - SPACER * 2
-                    underdose_edge = cls.write_hole_1D(
-                        cell, _tmp_beamdata, holedata, num_cav_hole, num_mir_hole_L, num_mir_hole_R, acav,
-                        amir, end_period, end_taper_L, end_taper_R, num_end_taper, reverse_tone=True
-                    )
-                    region = gdspy.fast_boolean(ord_holes, underdose_holes, 'not', max_points=0, layer=12)
-                    region2 = gdspy.fast_boolean(underdose_edge, ref_ord_edge, 'not', max_points=0, layer=12)
-                    # underdose_holes = gdspy.fast_boolean(underdose_edge, region2, 'not', max_points=0, layer=12)
-                    cell.add(underdose_holes)
-                    cell.add(region)
-                    cell.add(region2)
-            else:
-                cell.add(ord_holes)
-        _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0 + BEAM_SPACING
+            curr_hole_position.xpos = curr_hole_position.xpos + _aper / 2.0
+        return holes
 
 
 class GratingCoupler:
@@ -485,7 +516,13 @@ class Phc(Component):
 
     BOUNDING_RECTANGLE_SCALAR = 1.2
     END_PERIOD = numpy.round(955 / (3.1 * 2), 1)
-    NUM_GUIDES = 0  # Define the number of blank waveguides for control measurements (0,1,2)
+    
+    class GuideEnum(enum.Enum):
+        IGNORE = 0
+        TOP = 1
+        TOP_AND_BOTTOM = 2
+
+    GUIDE_CONFIG = GuideEnum.TOP_AND_BOTTOM  # Define the number of blank waveguides for control measurements (0,1,2)
 
     # For grating spacer
     GRATING_SPACER = False
@@ -509,6 +546,14 @@ class Phc(Component):
     GAPS = numpy.linspace(0, 1, DEVS)
 
     PHC_Y_OFFSET = (35 - 0.275) * Unit.um.value  # An arbitrary parameter for centering the devices at the origin
+
+    # Parameters for alignment marks
+    MARK_THICKNESS = 1e3
+    MARK_LENGTH = 5e3
+
+    TEXT_DIST_TO_TOP = 6e3
+    # Underdose Regions
+    EDGE_UNDERDOSE = False
 
     def __init__(self, device_id, row_i, col_i, beam, grating_coupler, enable_bounding_rectangle=True) -> None:
         super().__init__()
@@ -543,7 +588,7 @@ class Phc(Component):
             self.god_cell.add(phc_pos)
 
         if self.WRITE_PHC:
-            phc = self.create_phc_group(params, end_period=self.END_PERIOD, blank_guides=self.NUM_GUIDES, create_label=self.TEXT)
+            phc = self.create_phc_group(params, end_period=self.END_PERIOD, guide_config=self.GUIDE_CONFIG, create_label=self.TEXT)
             phc_pos = gdspy.CellReference(phc, (xpos, ypos - self.PHC_Y_OFFSET))
             self.god_cell.add(phc_pos)
 
@@ -569,11 +614,12 @@ class Phc(Component):
 
     @cached_property
     def bounding_rectangle(self):
-        rect = Rectangle(
-            width=self.grating_coupler.width * self.BOUNDING_RECTANGLE_SCALAR, 
-            height=self.grating_coupler.height * self.BOUNDING_RECTANGLE_SCALAR,
+        self.bounding_box_cell.add(
+            rect := Rectangle(
+                width=self.grating_coupler.width * self.BOUNDING_RECTANGLE_SCALAR, 
+                height=self.grating_coupler.height * self.BOUNDING_RECTANGLE_SCALAR,
+            )
         )
-        self.bounding_box_cell.add(rect)
         return rect
         
     @classmethod
@@ -661,10 +707,6 @@ class Phc(Component):
 
         return _linker_combined
 
-    # Parameters for alignment marks
-    MARK_THICKNESS = 1e3
-    MARK_LENGTH = 5e3
-
     @classmethod
     def write_alignment_mark(cls, cell, alignment_xpos, alignment_ypos, layer=3):
         cell.add(
@@ -703,10 +745,6 @@ class Phc(Component):
     #         layer=layer
     #     )
 
-    TEXT_DIST_TO_TOP = 6e3
-    # Underdose Regions
-    EDGE_UNDERDOSE = False
-
     @classmethod
     def get_grating_couplers(cls, beam_position, beam_dy_list):
         beam_position = copy.copy(beam_position)
@@ -732,7 +770,7 @@ class Phc(Component):
             _box_write_area = gdspy.fast_boolean(_box_write_area, _linker_combined, 'not', max_points=0, layer=layer)
         if circ_grating:
             grating_couplers = cls.get_grating_couplers(beamdata, beam_dy_list)
-            all_grating_coupler_geometry = Polygon.fast_combine(*([gc.left_shockwave for gc in grating_couplers] + [gc.right_shockwave for gc in grating_couplers]), layer=layer)
+            all_grating_coupler_geometry = Polygon.combine(*([gc.left_shockwave for gc in grating_couplers] + [gc.right_shockwave for gc in grating_couplers]), layer=layer)
             _box_write_area = gdspy.fast_boolean(_box_write_area, all_grating_coupler_geometry, 'or', max_points=0, layer=layer)
         if pattern_number is not None:
             _left_pattern_number = create_phc_label(cell, _xmin + LINKER_EDGE_OFFSET + LINKER_WIDTH / 2.0, _ymax - LINKER_EDGE_OFFSET - cls.TEXT_DIST_TO_TOP, pattern_number)
@@ -740,6 +778,42 @@ class Phc(Component):
             _pattern_number_combined = gdspy.fast_boolean(_left_pattern_number, _right_pattern_number, 'or', max_points=0, layer=layer)
             _box_write_area = gdspy.fast_boolean(_box_write_area, _pattern_number_combined, 'xor', max_points=0, layer=layer)
         return _box_write_area
+
+    @classmethod
+    def create_nano_beams_DOESNT_DO_ANYTHING(cls, beam_position, beam_dy_list, reverse_tone, pinch_pt_L, pinch_pt_R, pinch_pt_size, pinch_pt_L_offset, pinch_pt_R_offset, layer):
+        logger.info("Creating nano beams:")
+
+        beam_position = copy.copy(beam_position)
+        beam_position.ypos = beam_position.ypos - beam_dy_list[0] / 2.0
+
+        nano_beams = []
+        for i in range(PHC_GROUP_COUNT):
+            logger.info(f" - Beam {i}")
+ 
+            beam_position.ypos = beam_position.ypos + beam_dy_list[i] / 2.0
+            if cls.EDGE_UNDERDOSE and not reverse_tone:
+                beam_position.dy = beam_dy_list[i] + UNDER_EDGE_SIZE * 2
+            else:
+                beam_position.dy = beam_dy_list[i]
+
+            nano_beam = NanoBeam.get_weirdly_unused_polygon(
+                points=[
+                    (beam_position.xpos - beam_position.dx / 2.0, beam_position.ypos - beam_position.dy / 2.0),
+                    (beam_position.xpos - beam_position.dx / 2.0, beam_position.ypos + beam_position.dy / 2.0),
+                    (beam_position.xpos + beam_position.dx / 2.0, beam_position.ypos + beam_position.dy / 2.0),
+                    (beam_position.xpos + beam_position.dx / 2.0, beam_position.ypos - beam_position.dy / 2.0),
+                ],
+                beam_position=beam_position, 
+                pinch_pt_L=pinch_pt_L, 
+                pinch_pt_R=pinch_pt_R, 
+                pinch_pt_size=pinch_pt_size, 
+                pinch_pt_L_offset=pinch_pt_L_offset, 
+                pinch_pt_R_offset=pinch_pt_R_offset, 
+                layer=layer
+            )
+            nano_beams.append(nano_beam)
+
+        return nano_beams
 
     @classmethod
     def write_outer_box(
@@ -755,61 +829,24 @@ class Phc(Component):
         if round_corner is True:
             _outer_box = _outer_box.fillet(CORNER_BEND_RAD, points_per_2pi=CORNER_BEND_PTS)
 
-        if direct_write_area is True:
-            _tmp_beamdata = copy.copy(beamdata)
-            _tmp_beamdata.ypos = _tmp_beamdata.ypos - beam_dy_list[0] / 2.0
-            for i in range(PHC_GROUP_COUNT - 5):
-                _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0
-                if cls.EDGE_UNDERDOSE and not reverse_tone:
-                    _tmp_beamdata.dy = beam_dy_list[i] + UNDER_EDGE_SIZE * 2
-                else:
-                    _tmp_beamdata.dy = beam_dy_list[i]
+        if direct_write_area:
+            logger.info("Creating direct_write_area...")
+            all_nano_beam_geometry = None
+            nano_beams = cls.create_nano_beams_DOESNT_DO_ANYTHING(
+                beam_position          = beamdata,
+                beam_dy_list      = beam_dy_list,
+                reverse_tone      = reverse_tone,
+                pinch_pt_L        = pinch_pt_L,
+                pinch_pt_R        = pinch_pt_R,
+                pinch_pt_size     = pinch_pt_size,
+                pinch_pt_L_offset = pinch_pt_L_offset,
+                pinch_pt_R_offset = pinch_pt_R_offset,
+                layer             = layer,
+            )
+            logger.info("Setting up all nano beam geometry...")
+            all_nano_beam_geometry = Polygon.combine(*nano_beams, layer=layer)
 
-                beam = NanoBeam(
-                    [
-                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
-                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos + _tmp_beamdata.dy / 2.0),
-                        (_tmp_beamdata.xpos + _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos + _tmp_beamdata.dy / 2.0),
-                        (_tmp_beamdata.xpos + _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
-                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
-                    ], 
-                    layer=layer
-                )
-                
-
-
-                _tmp_beam_polygon = gdspy.Polygon(
-                    [
-                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
-                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos + _tmp_beamdata.dy / 2.0),
-                        (_tmp_beamdata.xpos + _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos + _tmp_beamdata.dy / 2.0),
-                        (_tmp_beamdata.xpos + _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
-                        (_tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0, _tmp_beamdata.ypos - _tmp_beamdata.dy / 2.0),
-                    ], 
-                    layer=layer
-                )
-                if pinch_pt_L:
-                    _tmp_upper_triangle, _tmp_lower_triangle = pinch_pt_polygon(
-                        _tmp_beamdata.dy, pinch_pt_size, 
-                        _tmp_beamdata.xpos - _tmp_beamdata.dx / 2.0 + pinch_pt_L_offset, _tmp_beamdata.ypos, layer
-                    )
-                    _tmp_beam_polygon = gdspy.fast_boolean(_tmp_beam_polygon, _tmp_upper_triangle, 'not', max_points=0, layer=layer)
-                    _tmp_beam_polygon = gdspy.fast_boolean(_tmp_beam_polygon, _tmp_lower_triangle, 'not', max_points=0, layer=layer)
-                if pinch_pt_R:
-                    _tmp_upper_triangle, _tmp_lower_triangle = pinch_pt_polygon(
-                        _tmp_beamdata.dy, pinch_pt_size, 
-                        _tmp_beamdata.xpos + _tmp_beamdata.dx / 2.0 - pinch_pt_R_offset, 
-                        _tmp_beamdata.ypos, layer
-                    )
-                    _tmp_beam_polygon = gdspy.fast_boolean(_tmp_beam_polygon, _tmp_upper_triangle, 'not', max_points=0, layer=layer)
-                    _tmp_beam_polygon = gdspy.fast_boolean(_tmp_beam_polygon, _tmp_lower_triangle, 'not', max_points=0, layer=layer)
-
-                _tmp_beamdata.ypos = _tmp_beamdata.ypos + beam_dy_list[i] / 2.0 + BEAM_SPACING
-                if i == 0:
-                    _tmp_beam_polygon_combined = _tmp_beam_polygon
-                else:
-                    _tmp_beam_polygon_combined = gdspy.fast_boolean(_tmp_beam_polygon_combined, _tmp_beam_polygon, 'or', max_points=0, layer=layer)
-            _box_write_area = cls.get_box_write_area(_outer_box, _tmp_beam_polygon_combined, layer, write_linker, circ_grating, pattern_number, beamdata, _xmin, _xmax, _ymin, _ymax, round_corner, beam_dy_list, cell)
+            _box_write_area = cls.get_box_write_area(_outer_box, all_nano_beam_geometry, layer, write_linker, circ_grating, pattern_number, beamdata, _xmin, _xmax, _ymin, _ymax, round_corner, beam_dy_list, cell)
 
             rough = gdspy.Rectangle(
                 (beamdata.xpos - beamdata.dx / 2, beamdata.ypos - EDGE_OFFSET - beamdata.dy / 2), 
@@ -821,21 +858,21 @@ class Phc(Component):
                 (beamdata.xpos + beamdata.dx / 2 - SPACER, beamdata.ypos + EDGE_OFFSET + beamdata.dy / 2),
                 layer=layer
             )
-            rough2 = gdspy.fast_boolean(rough2, _tmp_beam_polygon_combined, 'not', max_points=0, layer=layer)
-            rough = gdspy.fast_boolean(rough, _tmp_beam_polygon_combined, 'not', max_points=0, layer=layer)
+            rough2 = gdspy.fast_boolean(rough2, all_nano_beam_geometry, 'not', max_points=0, layer=layer)
+            rough = gdspy.fast_boolean(rough, all_nano_beam_geometry, 'not', max_points=0, layer=layer)
 
-        if reverse_tone:
-            _box_write_area = gdspy.fast_boolean(_box_write_area, _tmp_beam_polygon_combined, 'or', max_points=0, layer=layer)
-            _box_write_area_reverse = gdspy.fast_boolean(_outer_box, _box_write_area, 'not', max_points=0, layer=layer)
-            if grating_spacer:
-                cell.add(rough)
-                cell.add(rough2)
-            cell.add(_box_write_area_reverse)
-        else:
-            if grating_spacer:
-                _box_write_area = gdspy.fast_boolean(_box_write_area, rough, 'not', max_points=0, layer=layer)
-                _box_write_area = gdspy.fast_boolean(_box_write_area, rough2, 'not', max_points=0, layer=layer)
-            cell.add(_box_write_area)
+            if reverse_tone:
+                _box_write_area = gdspy.fast_boolean(_box_write_area, all_nano_beam_geometry, 'or', max_points=0, layer=layer)
+                _box_write_area_reverse = gdspy.fast_boolean(_outer_box, _box_write_area, 'not', max_points=0, layer=layer)
+                if grating_spacer:
+                    cell.add(rough)
+                    cell.add(rough2)
+                cell.add(_box_write_area_reverse)
+            else:
+                if grating_spacer:
+                    _box_write_area = gdspy.fast_boolean(_box_write_area, rough, 'not', max_points=0, layer=layer)
+                    _box_write_area = gdspy.fast_boolean(_box_write_area, rough2, 'not', max_points=0, layer=layer)
+                cell.add(_box_write_area)
 
         if alignment_mark:
             _yoffset = 10000
@@ -863,11 +900,14 @@ class Phc(Component):
     # Overdose Regions
     RING_OVERDOSE = False
     EDGE_OVERDOSE = False
+    
+    RING_OVERDOSE = True
+    EDGE_OVERDOSE = True
 
     # Underdose Regions
     RING_UNDERDOSE = False
 
-    def create_phc_group(self, param_sweep, end_period, blank_guides, create_label=True):
+    def create_phc_group(self, param_sweep, end_period, guide_config, create_label=True):
 
         acav = param_sweep[1][0]
         amir = param_sweep[1][1]
@@ -885,33 +925,46 @@ class Phc(Component):
         holedata_circ_rowicolj = self.PLTdata(xpos=beamdata_rowicolj.xpos - HOLE_POS_OFFSET, ypos=beamdata_rowicolj.ypos, dx=hx, dy=hy)
 
         _initial_ypos = holedata_circ_rowicolj.ypos - beam_dy_list[0] / 2.0
-        _tmp_beamdata = copy.copy(beamdata_rowicolj)
-        _tmp_beamdata.ypos = _tmp_beamdata.ypos - beam_dy_list[0] / 2.0
+        beam_position = copy.copy(beamdata_rowicolj)
+        beam_position.ypos = beam_position.ypos - beam_dy_list[0] / 2.0
 
         for i in range(PHC_GROUP_COUNT):
-            NanoBeam.create_nano_beam(
-                i              = i,
-                _initial_ypos  = _initial_ypos,
-                _tmp_beamdata  = _tmp_beamdata,
+            
+            do_guide = False
+            if guide_config == self.GuideEnum.TOP:
+                if i == 0:
+                    do_guide = True
+            elif guide_config == self.GuideEnum.TOP_AND_BOTTOM:
+                if i == 0 or i == PHC_GROUP_COUNT - 1:
+                    do_guide = True
+
+            holedata_circ_rowicolj.ypos = _initial_ypos + i * BEAM_SPACING + numpy.sum(beam_dy_list[:i]) + beam_dy_list[i] / 2.0
+            beam_position.ypos = beam_position.ypos + beam_dy_list[i] / 2.0
+            beam_position.dy = beam_dy_list[i]
+
+            NanoBeam(
+                beam_position  = beam_position,
                 cell           = beams, 
                 holedata       = holedata_circ_rowicolj, 
-                beam_dy_list   = beam_dy_list, 
                 num_cav_hole   = num_cav,
                 num_mir_hole_L = num_mirr / 2,
                 num_mir_hole_R = num_mirr / 2, 
                 acav           = acav, 
                 amir           = amir, 
                 end_period     = end_period, 
-                guides         = blank_guides,
+                do_guide       = do_guide,
                 end_taper_L    = True, 
                 end_taper_R    = True, 
                 num_end_taper  = num_tap, 
                 reverse_tone   = self.REVERSE_TONE, 
-                edge_overdose  = self.EDGE_OVERDOSE,
-                ring_overdose  = self.RING_OVERDOSE,
-                ring_underdose = self.RING_UNDERDOSE, 
-                edge_underdose = self.RING_UNDERDOSE
+                beam_overdose  = self.EDGE_OVERDOSE,
+                hole_overdose  = self.RING_OVERDOSE,
+                hole_underdose = self.RING_UNDERDOSE, 
+                beam_underdose = self.RING_UNDERDOSE
             )
+
+            beam_position.ypos = beam_position.ypos + beam_dy_list[i] / 2.0 + BEAM_SPACING
+
 
         direct_write_area = True
         circ_grating = True

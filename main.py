@@ -2,6 +2,7 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 from functools import cached_property
 import os
+import traceback
 import gdspy
 from classes.generic import logger, Component, config_dataclass
 import numpy
@@ -131,10 +132,12 @@ class PhcGenerator:
                         device_id=device_id,
                         row_i=row_i, 
                         col_i=col_i, 
-                        beam=NanoBeam(
-                            width=60 * Unit.um.value, 
-                            height= 30 * Unit.um.value
-                        ),
+                        # beam=NanoBeam(
+                        #     width=60 * Unit.um.value, 
+                        #     height= 30 * Unit.um.value
+                        # ),
+                        beam=None,
+                        # grating_coupler=GratingCoupler(),
                         grating_coupler=None,  # GratingCoupler()
                     )
                 )
@@ -186,7 +189,13 @@ class Creator:
 
     def save_file(self, unit=UNIT, precision=PRESICION):
         self.preprocess_geometries()
-        gdspy.write_gds(self.filepath, unit=unit, precision=precision)
+
+        try:
+            gdspy.write_gds(self.filepath, unit=unit, precision=precision)
+        except Exception as e:
+            print(e)
+            print(traceback.format_exc())
+
         if os.path.exists(self.filepath):
             logger.info(f"{self.filepath} saved!")
         else:
